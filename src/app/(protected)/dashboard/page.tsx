@@ -7,8 +7,10 @@ const DashboardPage = () => {
 
   return (
     <div>
-      {user?.firstName}
+        <div>{user?.firstName}</div>
+        <div>{user?.lastName}</div>
     </div>
+    
   )
 }
 
