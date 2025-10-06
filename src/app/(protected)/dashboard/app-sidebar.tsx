@@ -8,6 +8,7 @@ import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import Image from "next/image"
+import useProject from "@/hooks/use-project"
 
 
 const items = [
@@ -32,22 +33,10 @@ const items = [
         icons: CreditCard,
     }
 ]
-
-const projects = [
-    {
-        name: 'Project 1'
-    },
-    {
-        name: 'Project 2'
-    },
-    {
-        name: 'Project 1'
-    }
-]
-
 export function AppSidebar(){
     const pathname = usePathname()
     const { open } = useSidebar()
+    const {projects,projectId,setProjectId} = useProject()
     return (
         <Sidebar collapsible="icon" variant="floating">
                  <SidebarHeader>
@@ -93,16 +82,17 @@ export function AppSidebar(){
                     </SidebarGroupLabel>
                         <SidebarGroupContent>
                             <SidebarMenu>
-                                {projects.map(project =>{
+                                {projects?.map(project =>{
                                     return(
                                         <SidebarMenuItem key={project.name}>
                                             <SidebarMenuButton asChild>
-                                                <div>
+                                                <div onClick={() => {
+                                                    setProjectId(project.id)
+                                                }}>
                                                     <div className={cn(
                                                         'rounded-sm border size-6 flex items-center justify-center text-sm bg-white text-primary ',
                                                         {
-                                                            'bg-primary text-white': true
-                                                            //'bg-primary text-white': project.id === project.id
+                                                            'bg-primary text-white': project.id === projectId
                                                         }
                                                     )}>
                                                         {project.name[0]}
