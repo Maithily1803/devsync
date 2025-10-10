@@ -5,7 +5,7 @@ const genAI = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY!,
 });
 
-export const summariseCommits = async (diff: string): Promise<string> => {
+export const aiSummariseCommit = async (diff: string): Promise<string> => {
   const response = await genAI.models.generateContent({
     model: 'gemini-2.5-flash', // Specify the model name
     contents: [

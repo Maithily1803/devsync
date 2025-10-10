@@ -1,4 +1,5 @@
-
+import axios from "axios" ; 
+import { aiSummariseCommit } from './gemini';
 import { Github } from 'lucide-react';
 import { Octokit } from "@octokit/rest";
 import { db } from '@/server/db';
@@ -42,9 +43,57 @@ export const pollCommits = async (projectId: string) => {
     const {project, githubUrl} = await fetchProjectGithubUrl(projectId)
     const commitHashes = await getCommitHashes(githubUrl)
     const unprocessedCommits = await filterUnprocessedCommits(projectId, commitHashes)
-    return unprocessedCommits
+    const summaryResponse = await Promise.allSettled(unprocessedCommits.map(commit => {
+        return summariseCommit(githubUrl, commit.commitHash)
+    }))
+    const summaries = summaryResponse.map((response) => {
+        if (response.status === 'fulfilled') {
+            return response.value as string
+        }
+        return ""
+    })
+
+    console.log("🧠 Commits to insert =>",
+  summaries.map((summary, index) => ({
+    projectId,
+    commitHash: unprocessedCommits[index]!.commitHash,
+    commitMessage: unprocessedCommits[index]!.commitMessage ?? "",
+    commitAuthorName: unprocessedCommits[index]!.commitAuthorName,
+    commitAuthorAvatar: unprocessedCommits[index]!.commitAuthorAvatar,
+    commitDate: unprocessedCommits[index]!.commitDate,
+    summary
+  }))
+);
+
+    const commits = await db.commit.createMany({
+        data: summaries.map((summary, index) => {
+            console.log(`processing commit ${index}`)
+            return {
+                projectId: projectId,
+                commitHash: unprocessedCommits[index]!.commitHash,
+                commitMessage: unprocessedCommits[index]!.commitMessage ?? "",
+                commitAuthorName: unprocessedCommits[index]!.commitAuthorName,
+                commitAuthorAvatar: unprocessedCommits[index]!.commitAuthorAvatar,
+                commitDate: unprocessedCommits[index]!.commitDate,
+                summary
+            }
+        })
+    })
+
+
+
+    return commits
 }
 
+async function summariseCommit(githubUrl:string, commitHash: string){
+    //get the diff, then pass the diff into ai
+    const {data} = await axios.get(`${githubUrl}/commit/${commitHash}.diff`, {
+        headers: {
+            Accept: 'application/vnd.github.v3.diff'
+        }
+    })
+    return await aiSummariseCommit(data) || ""
+}
 
 
 
@@ -80,4 +129,4 @@ async function filterUnprocessedCommits(projectId: string, commitHashes: Respons
 }
 
 
-await pollCommits('cmgexcdu5000658jn4i7aga2j').then(console.log)
+
