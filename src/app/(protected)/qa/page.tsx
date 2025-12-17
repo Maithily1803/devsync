@@ -18,7 +18,8 @@ const QAPage = () => {
   return (
     <Sheet>
       <AskQuestionCard />
-      <div className="h-4"></div>
+      <div className="mx-auto max-w-6xl px-6 py-8 space-y-6"></div>
+
       <h1 className="text-xl font-semibold">Saved Questions</h1>
       <div className="h-2"></div>
       <div className="flex flex-col gap-2">

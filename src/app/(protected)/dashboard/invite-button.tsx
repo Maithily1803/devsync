@@ -26,7 +26,8 @@ const InviteButton = () => {
                         navigator.clipboard.writeText(`${window.location.origin}/join/${projectId}`)
                         toast.success("copied to clipboard")
                     }}
-                    value={`${window.location.origin}/join/${projectId}`}
+                    value={`${typeof window !== "undefined" ? window.location.origin : ""}/join/${projectId}`}
+
                 />
             </DialogContent>
         </Dialog>

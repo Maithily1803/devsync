@@ -46,8 +46,15 @@ const DashboardPage = () => {
         <div className="mt-4">
           <div className='grid grid-cols-1 gap-4 sm:grid-cols-5'>
             <AskQuestionCard />
-          </div>
+            {project ? (
+            <MeetingCard project={project} />
+          ) : (
+            <div className="col-span-2 flex items-center justify-center rounded-md border p-10 text-sm text-gray-500">
+              Select a project to upload meetings
+            </div>
+          )}
         </div>
+      </div>
 
         <div className="mt-8"></div>
         <CommitLog />

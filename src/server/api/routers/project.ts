@@ -102,5 +102,36 @@ export const projectRouter = createTRPCRouter({
     }),
     getTeamMembers: protectedProcedure.input(z.object({ projectId: z.string()})).query(async ({ ctx,input})=> {
       return await ctx.db.userToProject.findMany({ where: { projectId: input.projectId}, include: { user: true}})
-    })
+    }),
+
+    saveMeetingTranscript: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        audioUrl: z.string(),
+        transcript: z.string().optional(),
+        status: z.string().optional(), // e.g. 'processing' | 'completed'
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const meeting = await ctx.db.meeting.create({
+        data: {
+          projectId: input.projectId,
+          audioUrl: input.audioUrl,
+          transcript: input.transcript ?? null,
+          status: input.status ?? "processing",
+        },
+      });
+      return meeting;
+    }),
+
+  // --- New: Get all meeting transcripts ---
+  getMeetingTranscripts: protectedProcedure
+    .input(z.object({ projectId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      return await ctx.db.meeting.findMany({
+        where: { projectId: input.projectId },
+        orderBy: { createdAt: "desc" },
+      });
+    }),
 });

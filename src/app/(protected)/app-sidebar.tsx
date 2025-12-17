@@ -24,7 +24,7 @@ const items = [
     },
     {
         title: "Meetings",
-        url: '/meetings',
+        url: '/meeting',
         icons: Presentation,
     },
     {
