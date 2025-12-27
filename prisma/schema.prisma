@@ -19,6 +19,7 @@ model User {
   credits        Int             @default(150)
   UserToProjects UserToProject[]
   questionsAsked  Question[]
+  payments  Payment[]
 }
 
 model Project {
@@ -107,4 +108,17 @@ model Meeting {
   assemblyaiId String?  @unique
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt  
+}
+
+model Payment {
+  id            String   @id @default(uuid())
+  userId        String
+  razorpayOrder String
+  razorpayPayId String?
+  amount        Int
+  credits       Int
+  status        String   // created | paid | failed
+  createdAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
 }

@@ -1,4 +1,3 @@
-// src/app/(protected)/dashboard/ask-question-card.tsx
 'use client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -9,12 +8,11 @@ import React from 'react'
 import Image from 'next/image'
 import { askQuestion } from './actions'
 import { readStreamableValue } from '@ai-sdk/rsc'
-import MDEditor from '@uiw/react-md-editor';
+import MDEditor from '@uiw/react-md-editor'
 import CodeReferences from './code-references'
 import { api } from '@/trpc/react'
 import { toast } from 'sonner'
 import useRefetch from '@/hooks/use-refetch'
-
 
 const AskQuestionCard = () => {
   const { project } = useProject()
@@ -22,84 +20,150 @@ const AskQuestionCard = () => {
   const [question, setQuestion] = React.useState('')
   const [loading, setLoading] = React.useState(false)
   const [answer, setAnswer] = React.useState('')
-  const [filesReferences, setFilesReferences] = React.useState<{ fileName: string; sourceCode: string; summary: string }[]>([])
+  const [filesReferences, setFilesReferences] = React.useState<
+    { fileName: string; sourceCode: string; summary: string }[]
+  >([])
   const saveAnswer = api.project.saveAnswer.useMutation()
+  const refetch = useRefetch()
 
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!project?.id) return
     setLoading(true)
-    
     setAnswer('')
     setFilesReferences([])
 
     const { output, filesReferences } = await askQuestion(question, project.id)
     setOpen(true)
-    // Set file references (they already use fileName in actions.ts)
     setFilesReferences(filesReferences)
 
-    // Read streamable value and append to answer string
     for await (const delta of readStreamableValue(output)) {
-      if (delta){setAnswer(ans => ans + delta)
+      if (delta) setAnswer((ans) => ans + delta)
     }
-  }
     setLoading(false)
   }
-  const refetch = useRefetch
+
   return (
     <>
+      {/* ---------------- Dialog ---------------- */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className='sm:max-w-[80vw]'>
+        <DialogContent
+          className="
+            w-[95vw]
+            max-w-full
+            sm:max-w-[80vw]
+            text-sm sm:text-lg
+            px-4 sm:px-6
+          "
+        >
           <DialogHeader>
-            <div className="flex items-center gap-2">
-            <DialogTitle>
-              <Image src='/logo.png' alt='devsync' width={40} height={40} />
-            </DialogTitle>
-            <Button disabled={saveAnswer.isPending} variant={'outline'} onClick={() => {
-              saveAnswer.mutate({
-                projectId: project!.id,
-                question,
-                answer,
-                filesReferences
-              },{
-                onSuccess: () => {
-                  toast.success('Answer saved!')
-                  refetch
-                },
-                onError: () => {
-                  toast.error('Failed to save answer!')
-                }
-              })
-            }}>
-              Save Answers
-            </Button>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <DialogTitle>
+                <Image src="/logo.png" alt="devsync" width={36} height={36} />
+              </DialogTitle>
+
+              <Button
+                disabled={saveAnswer.isPending}
+                variant="outline"
+                className="
+                  w-full sm:w-auto
+                  text-sm sm:text-base
+                  px-3 sm:px-4
+                  shrink-0
+                "
+                onClick={() => {
+                  saveAnswer.mutate(
+                    {
+                      projectId: project!.id,
+                      question,
+                      answer,
+                      filesReferences,
+                    },
+                    {
+                      onSuccess: () => {
+                        toast.success('Answer saved!')
+                        refetch()
+                      },
+                      onError: () => {
+                        toast.error('Failed to save answer!')
+                      },
+                    }
+                  )
+                }}
+              >
+                Save Answers
+              </Button>
             </div>
           </DialogHeader>
 
-          
-          <MDEditor.Markdown source={answer} className='max-w-full max-h-[40vh] overflow-auto'/>
-          <div className="h-4"></div>
+          {/* Answer */}
+          <MDEditor.Markdown
+            source={answer}
+            className="
+              max-w-full
+              max-h-[45vh]
+              overflow-auto
+              break-words
+              text-sm sm:text-lg
+            "
+          />
+
+          <div className="h-4" />
           <CodeReferences filesReferences={filesReferences} />
-          <Button type='button' onClick={() => {setOpen(false); setAnswer('')}}>
+
+          <Button
+            type="button"
+            className="w-full sm:w-auto shrink-0"
+            onClick={() => {
+              setOpen(false)
+              setAnswer('')
+            }}
+          >
             Close
           </Button>
-          
         </DialogContent>
       </Dialog>
 
-      <Card className='relative col-span-3'>
+      {/* ---------------- Card ---------------- */}
+      <Card className="relative col-span-1 sm:col-span-3 text-base sm:text-lg">
         <CardHeader>
           <CardTitle>Ask a question</CardTitle>
         </CardHeader>
+
         <CardContent>
           <form onSubmit={onSubmit}>
             <Textarea
-              placeholder='Which file should I edit to change the home page?'
+              className="
+                text-base sm:text-xl
+                placeholder:text-sm sm:placeholder:text-base
+                leading-relaxed
+                min-h-[85px]
+                px-3 sm:px-4
+                py-2 sm:py-3
+              "
+              placeholder="Which file should I edit to change the home page?"
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
             />
-            <div className='h-4' />
-            <Button type='submit' disabled={loading}>
+
+            <div className="h-6 sm:h-8" />
+
+            <Button
+              type="submit"
+              size="lg"
+              disabled={loading}
+              className="
+                w-full sm:w-auto
+                text-sm sm:text-base
+                font-semibold
+                cursor-pointer
+                disabled:cursor-not-allowed
+                transition-all duration-200
+                hover:bg-primary/90
+                hover:scale-[1.03]
+                active:scale-[0.97]
+              "
+            >
               {loading ? 'Thinking...' : 'Ask Devsync!'}
             </Button>
           </form>
@@ -110,6 +174,5 @@ const AskQuestionCard = () => {
 }
 
 export default AskQuestionCard
-
 
 

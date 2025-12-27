@@ -24,49 +24,38 @@ const StatusBadge = ({ status }: { status: Meeting["status"] }) => {
   };
 
   return (
-    <span
-      className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${styles[status]}`}
-    >
+    <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${styles[status]}`}>
       {status}
     </span>
   );
 };
 
-const MeetingSkeletonRow = () => {
-  return (
-    <li className="flex items-center justify-between px-6 py-4 animate-pulse">
-      {/* Left */}
-      <div className="flex items-start gap-4 min-w-0">
-        <div className="h-9 w-9 rounded-md bg-gray-200" />
-
-        <div className="space-y-2">
-          <div className="h-4 w-48 rounded bg-gray-200" />
-          <div className="flex gap-2">
-            <div className="h-3 w-20 rounded bg-gray-200" />
-            <div className="h-3 w-16 rounded bg-gray-200" />
-          </div>
+const MeetingSkeletonRow = () => (
+  <li className="flex items-center justify-between px-4 py-4 animate-pulse">
+    <div className="flex items-start gap-4">
+      <div className="h-9 w-9 rounded-md bg-gray-200" />
+      <div className="space-y-2">
+        <div className="h-4 w-48 rounded bg-gray-200" />
+        <div className="flex gap-2">
+          <div className="h-3 w-20 rounded bg-gray-200" />
+          <div className="h-3 w-16 rounded bg-gray-200" />
         </div>
       </div>
+    </div>
+    <div className="flex gap-2">
+      <div className="h-8 w-16 rounded bg-gray-200" />
+      <div className="h-8 w-8 rounded bg-gray-200" />
+    </div>
+  </li>
+);
 
-      {/* Right */}
-      <div className="flex gap-2">
-        <div className="h-8 w-16 rounded bg-gray-200" />
-        <div className="h-8 w-8 rounded bg-gray-200" />
-      </div>
-    </li>
-  );
-};
-
-const MeetingsSkeletonList = () => {
-  return (
-    <ul className="divide-y">
-      {Array.from({ length: 5 }).map((_, i) => (
-        <MeetingSkeletonRow key={i} />
-      ))}
-    </ul>
-  );
-};
-
+const MeetingsSkeletonList = () => (
+  <ul className="divide-y">
+    {Array.from({ length: 4 }).map((_, i) => (
+      <MeetingSkeletonRow key={i} />
+    ))}
+  </ul>
+);
 
 export default function MeetingPage() {
   const { projectId, projects } = useProject();
@@ -83,28 +72,20 @@ export default function MeetingPage() {
       const res = await fetch(`/api/meeting/${project.id}`);
       const data = await res.json();
       setMeetings(data.meetings ?? []);
-    } catch (err) {
-      console.error("Failed to fetch meetings:", err);
     } finally {
       setLoading(false);
     }
   };
 
   const handleDelete = async (meetingId: string) => {
-    const confirm = window.confirm("Delete this meeting permanently?");
-    if (!confirm) return;
+    if (!window.confirm("Delete this meeting permanently?")) return;
 
     try {
-      const res = await fetch(`/api/meeting/${meetingId}`, {
-        method: "DELETE",
-      });
-
-      if (!res.ok) throw new Error("Delete failed");
-
+      const res = await fetch(`/api/meeting/${meetingId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
       toast.success("Meeting deleted");
       setMeetings((prev) => prev.filter((m) => m.id !== meetingId));
-    } catch (err) {
-      console.error(err);
+    } catch {
       toast.error("Failed to delete meeting");
     }
   };
@@ -117,97 +98,105 @@ export default function MeetingPage() {
 
   if (!project) {
     return (
-      <div className="mx-auto max-w-5xl p-10 text-center">
-        <h1 className="text-xl font-semibold text-gray-800">
-          Select a project
-        </h1>
+      <div className="mx-auto max-w-5xl py-12 text-center">
+        <h1 className="text-xl font-semibold">Select a project</h1>
         <p className="text-gray-600 mt-1">
-          Choose a project from the sidebar to view and upload meetings.
+          Choose a project from the sidebar to view meetings.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8 space-y-6">
-      {/* Upload */}
-      <MeetingCard project={project} />
+    /* 🔑 Key fix: wrapper that DOES NOT stretch vertically */
+    <div className="w-full">
+      <div className="mx-auto max-w-6xl px-3 py-4 sm:px-4 sm:py-6 lg:px-6 lg:py-6 space-y-6">
+        <MeetingCard project={project} />
 
-      {/* All Meetings */}
-      <Card className="w-full">
-        <div className="border-b px-6 py-4">
-          <h2 className=" text-xl font-semibold text-gray-900">All Meetings</h2>
-        </div>
-
-        {loading && meetings.length === 0 && <MeetingsSkeletonList />}
-
-
-        {!loading && meetings.length === 0 && (
-          <p className="px-6 py-8 text-sm text-gray-500">
-            No meetings yet. Upload your first one 🎙️
-          </p>
-        )}
-
-        <ul className="divide-y">
-  {meetings.map((meeting) => (
-    <li
-      key={meeting.id}
-      className="flex items-center justify-between px-6 py-4 transition hover:bg-gray-50"
-    >
-      {/* Left side (NOT clickable except link) */}
-      <div className="flex items-start gap-4 min-w-0">
-        <div className="mt-1 rounded-md bg-gray-100 p-2">
-          🎙️
-        </div>
-
-        <div className="min-w-0">
-          {/* ONLY this text is clickable */}
-          <Link
-            href={`/meeting/${meeting.id}`}
-            className="block font-medium text-gray-900 hover:underline truncate cursor-pointer"
-          >
-            {meeting.name}
-          </Link>
-
-          <div className="mt-1 flex items-center gap-2 text-xs text-gray-500">
-            <time dateTime={meeting.createdAt}>
-              {new Date(meeting.createdAt).toLocaleDateString()}
-            </time>
-            <span>•</span>
-            <StatusBadge status={meeting.status} />
+        <Card>
+          <div className="border-b px-4 py-3 sm:px-6">
+            <h2 className="text-2xl sm:text-2xl font-semibold">All Meetings</h2>
           </div>
-        </div>
+
+          {loading && meetings.length === 0 && <MeetingsSkeletonList />}
+
+          {!loading && meetings.length === 0 && (
+            <p className="px-4 py-6 text-2xl text-gray-500">
+              No meetings yet. Upload your first one 🎙️
+            </p>
+          )}
+
+          <ul className="divide-y">
+            {meetings.map((meeting) => (
+              <li
+                key={meeting.id}
+                className="
+                  flex flex-col gap-4
+                  sm:flex-row sm:items-center sm:justify-between
+                  px-4 py-4 sm:px-6
+                  hover:bg-gray-50 transition
+                "
+              >
+                <div className="flex items-start gap-3 min-w-0">
+                  <div className="mt-1 rounded-md bg-gray-100 p-2">🎙️</div>
+
+                  <div className="min-w-0">
+                    <Link
+                      href={`/meeting/${meeting.id}`}
+                      className="text-lg  block font-medium truncate hover:underline"
+                    >
+                      {meeting.name}
+                    </Link>
+
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
+                      <time>{new Date(meeting.createdAt).toLocaleDateString()}</time>
+                      <span className="hidden sm:inline">•</span>
+                      <StatusBadge status={meeting.status} />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Link href={`/meeting/${meeting.id}`}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="
+                      cursor-pointer
+                      transition-all duration-200
+                      hover:bg-primary/10
+                      hover:scale-[1.03]
+                      active:scale-[0.97]
+                    "
+                  >
+                    View
+                  </Button>
+
+                  </Link>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleDelete(meeting.id)}
+                    className="
+                      cursor-pointer
+                      transition-all duration-200
+                      hover:bg-red-500/10
+                      hover:scale-[1.03]
+                      active:scale-[0.97]
+                    "
+                  >
+                    <Trash2 className="h-4 w-4 text-red-600" />
+                  </Button>
+
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Card>
       </div>
-
-      {/* Actions (ONLY buttons clickable) */}
-      <div className="flex items-center gap-2 flex-none">
-        <Link href={`/meeting/${meeting.id}`} className="cursor-pointer">
-          <Button
-            variant="outline"
-            size="sm"
-            type="button"
-            className="cursor-pointer"
-          >
-            View
-          </Button>
-        </Link>
-
-        <Button
-          variant="outline"
-          size="sm"
-          type="button"
-          onClick={() => handleDelete(meeting.id)}
-          className="cursor-pointer"
-        >
-          <Trash2 className="h-4 w-4 text-red-600" />
-        </Button>
-      </div>
-    </li>
-  ))}
-</ul>
-
-      </Card>
     </div>
   );
 }
+
 
