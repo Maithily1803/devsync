@@ -46,7 +46,7 @@ async function requestWithExponentialBackoff(
         throw err;
       }
       const delayMs = baseDelayMs * Math.pow(2, attempt - 1);
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      await new Promise((resolve) => setTimeout(resolve, 1200));
     }
   }
 }

@@ -108,6 +108,7 @@ export const projectRouter = createTRPCRouter({
     .input(
       z.object({
         projectId: z.string(),
+        name: z.string().min(1),
         audioUrl: z.string(),
         transcript: z.string().optional(),
         status: z.string().optional(), // e.g. 'processing' | 'completed'
@@ -116,6 +117,7 @@ export const projectRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const meeting = await ctx.db.meeting.create({
         data: {
+          name: input.name,
           projectId: input.projectId,
           audioUrl: input.audioUrl,
           transcript: input.transcript ?? null,

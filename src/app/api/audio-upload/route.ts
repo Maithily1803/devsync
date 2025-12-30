@@ -1,26 +1,36 @@
+// src/app/api/audio-upload/route.ts
 import { supabaseServer } from "@/lib/supabaseServer";
 import { db } from "@/server/db";
+import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { startTranscription } from "@/lib/start-transcription";
 
 export const runtime = "nodejs";
-
+export const maxDuration = 60;
 
 export async function POST(req: Request) {
   try {
+    console.log("📤 Audio upload started");
+
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
     const projectId = formData.get("projectId") as string | null;
 
-    if (!file) {
-      return NextResponse.json(
-        { error: "No file uploaded" },
-        { status: 400 }
-      );
-    }
+    console.log("📋 Form data:", {
+      hasFile: !!file,
+      fileName: file?.name,
+      fileSize: file?.size,
+      projectId,
+    });
 
-    if (!projectId) {
+    if (!file || !projectId) {
       return NextResponse.json(
-        { error: "Missing projectId" },
+        { error: "Missing file or projectId" },
         { status: 400 }
       );
     }
@@ -36,14 +46,17 @@ export async function POST(req: Request) {
       );
     }
 
-    // Upload to Supabase
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const fileName = `aud/${Date.now()}-${file.name}`;
+    console.log("☁️ Uploading to Supabase...");
 
+    const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+    const filePath = `aud/${Date.now()}-${safeName}`;
+
+    // 🔥 IMPORTANT: upload FILE directly (no Buffer)
     const upload = await supabaseServer.storage
       .from("aud")
-      .upload(fileName, buffer, {
+      .upload(filePath, file, {
         contentType: file.type,
+        upsert: false,
       });
 
     if (upload.error) {
@@ -54,13 +67,17 @@ export async function POST(req: Request) {
       );
     }
 
+    console.log("✅ File uploaded to Supabase:", filePath);
+
     const { data: publicUrlData } = supabaseServer.storage
       .from("aud")
-      .getPublicUrl(fileName);
+      .getPublicUrl(filePath);
 
     const audioUrl = publicUrlData.publicUrl;
+    console.log("🔗 Audio URL:", audioUrl);
 
-    // Create meeting
+    console.log("💾 Creating meeting record...");
+
     const meeting = await db.meeting.create({
       data: {
         projectId,
@@ -70,21 +87,33 @@ export async function POST(req: Request) {
       },
     });
 
+    console.log("✅ Meeting created:", meeting.id);
+
+    // 🚀 START TRANSCRIPTION (NO HTTP CALL)
+    await startTranscription(audioUrl, meeting.id);
+
     return NextResponse.json(
       {
         success: true,
-        audioUrl,
-        meetingId: meeting.id,
-        projectId,
+        meeting: {
+          id: meeting.id,
+          name: meeting.name,
+          audioUrl: meeting.audioUrl,
+          status: meeting.status,
+        },
+        message: "Audio uploaded successfully. Transcription started.",
       },
       { status: 200 }
     );
   } catch (error) {
-    console.error("❌ /api/audio-upload failed:", error);
+    console.error("❌ Audio upload failed:", error);
+
     return NextResponse.json(
-      { error: "Internal Server Error" },
+      {
+        error: "Internal Server Error",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
       { status: 500 }
     );
   }
 }
-

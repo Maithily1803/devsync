@@ -23,6 +23,7 @@ export const getCommitHashes = async (githubUrl: string): Promise<CommitResponse
     const parts = githubUrl.split("/").filter(Boolean);
     const owner = parts[parts.length - 2];
     const repo = parts[parts.length - 1];
+    
 
     if (!owner || !repo) throw new Error("Invalid GitHub repository URL.");
 
