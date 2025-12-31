@@ -1,4 +1,5 @@
 'use client'
+
 import useProject from '@/hooks/use-project'
 import { api } from '@/trpc/react'
 import React from 'react'
@@ -15,14 +16,7 @@ const CommitLog = () => {
   )
 
   if (isLoading && commits === undefined) {
-    return (
-      <div className="space-y-3">
-        <p className="text-sm sm:text-base font-semibold text-gray-500">
-          Loading commits...
-        </p>
-        <CommitSkeleton />
-      </div>
-    )
+    return <p className="text-sm text-gray-500">Loading commits…</p>
   }
 
   if (!isLoading && commits?.length === 0) {
@@ -30,18 +24,9 @@ const CommitLog = () => {
   }
 
   return (
-    <ul className="space-y-5 sm:space-y-6">
+    <ul role="list" className="space-y-6">
       {commits?.map((commit, commitIdx) => (
-        <li
-          key={commit.id}
-          className="
-            relative
-            flex
-            flex-col
-            sm:flex-row
-            gap-3 sm:gap-4
-          "
-        >
+        <li key={commit.id} className="relative flex gap-x-4">
           {/* timeline line */}
           <div
             className={cn(
@@ -49,70 +34,52 @@ const CommitLog = () => {
               'absolute left-0 top-0 flex w-6 justify-center'
             )}
           >
-            <div className="hidden sm:block w-px translate-x-1 bg-gray-200" />
-
+            <div className="w-px translate-x-1 bg-gray-200" />
           </div>
 
           {/* avatar */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={commit.commitAuthorAvatar}
-            alt="commit avatar"
-            className="
-              relative
-              mt-1
-              w-8 h-8
-              sm:w-10 sm:h-10
-              rounded-full
-              bg-gray-50
-              shrink-0
-            "
+            alt=""
+            className="relative mt-3 h-8 w-8 flex-none rounded-full bg-gray-50"
           />
 
           {/* content */}
-          <div
-            className="
-              flex-1
-              rounded-md
-              p-3 sm:p-4
-              ring-1 ring-inset ring-gray-200
-              overflow-hidden
-            "
-          >
-            <Link
-              target="_blank"
-              href={`${project?.githubUrl}/commit/${commit.commitHash}`}
-              className="
-                text-xs sm:text-sm
-                text-gray-500
-                break-words
-              "
-            >
-              <span className="font-semibold text-gray-900 text-sm sm:text-base">
-                {commit.commitAuthorName}
-              </span>{' '}
-              <span className="inline-flex items-center gap-1">
-                committed
-                <ExternalLink className="h-3 w-3 sm:h-4 sm:w-4" />
-              </span>
-            </Link>
-
-            <span className="block mt-2 text-sm sm:text-base font-semibold break-words">
-              {commit.commitMessage}
-            </span>
-
-            {commit.summary && (
-              <pre
-                className="
-                  mt-2
-                  whitespace-pre-wrap
-                  break-words
-                  text-xs sm:text-sm
-                  leading-6
-                  text-gray-500
-                "
+          <div className="flex-auto rounded-md bg-white p-3 ring-1 ring-inset ring-gray-200">
+            {/* header */}
+            <div className="flex justify-between gap-x-4">
+              <Link
+                target="_blank"
+                href={`${project?.githubUrl}/commit/${commit.commitHash}`}
+                className="py-0.5 text-xs leading-5 text-gray-500"
               >
+                <span className="font-medium text-gray-900">
+                  {commit.commitAuthorName}
+                </span>{' '}
+                <span className="inline-flex items-center">
+                  committed
+                  <ExternalLink className="ml-1 h-4 w-4" />
+                </span>
+              </Link>
+
+              <time
+                dateTime={commit.commitDate.toString()}
+                className="flex-none py-0.5 text-xs leading-5 text-gray-500"
+              >
+                {new Date(commit.commitDate).toLocaleString()}
+              </time>
+            </div>
+
+            {/* MAIN CONTENT */}
+            {commit.summary ? (
+              <pre className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-700">
                 {commit.summary}
               </pre>
+            ) : (
+              <span className="mt-2 block font-semibold text-sm text-gray-900">
+                {commit.commitMessage}
+              </span>
             )}
           </div>
         </li>
@@ -122,38 +89,5 @@ const CommitLog = () => {
 }
 
 export default CommitLog
-
-/* ---------------- Skeleton ---------------- */
-
-const CommitSkeleton = () => {
-  return (
-    <ul className="space-y-5 sm:space-y-6 animate-pulse">
-      {Array.from({ length: 3 }).map((_, idx) => (
-        <li
-          key={idx}
-          className="
-            relative
-            flex
-            flex-col
-            sm:flex-row
-            gap-3 sm:gap-4
-          "
-        >
-          <div className="absolute left-0 top-0 flex w-6 justify-center">
-            <div className="w-px h-full bg-gray-200" />
-          </div>
-
-          <div className="mt-1 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gray-200 shrink-0" />
-
-          <div className="flex-1 rounded-md p-3 sm:p-4 ring-1 ring-inset ring-gray-200 space-y-3">
-            <div className="h-4 w-32 sm:w-40 rounded bg-gray-200" />
-            <div className="h-4 w-48 sm:w-56 rounded bg-gray-200" />
-            <div className="h-3 w-full rounded bg-gray-100" />
-          </div>
-        </li>
-      ))}
-    </ul>
-  )
-}
 
 

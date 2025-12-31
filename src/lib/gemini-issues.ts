@@ -29,7 +29,7 @@ export async function generateIssuesFromTranscript(
       return [];
     }
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     const prompt = `
 You are an expert project manager analyzing a meeting transcript. Extract actionable issues, bugs, features, and tasks from the following meeting transcript.

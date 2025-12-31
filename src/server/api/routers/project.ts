@@ -38,8 +38,9 @@ export const projectRouter = createTRPCRouter({
       });
 
       // ✅ Index and fetch commits
-      await indexGithubRepo(project.id, input.githubUrl, input.githubToken);
-      await pollCommits(project.id);
+      indexGithubRepo(project.id, input.githubUrl, input.githubToken)
+      .then(() => pollCommits(project.id))
+      .catch(console.error);
 
       return project;
     }),
