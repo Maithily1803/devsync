@@ -1,5 +1,3 @@
-// src/lib/credit-plans.ts
-
 export const CREDIT_PLANS = [
   { 
     id: "starter", 
@@ -10,8 +8,8 @@ export const CREDIT_PLANS = [
     features: [
       "200 AI Credits",
       "~20 Q&A sessions",
-      "~10 meeting transcripts",
-      "Email support"
+      "~10 Meeting issues",
+
     ],
     popular: false
   },
@@ -24,9 +22,7 @@ export const CREDIT_PLANS = [
     features: [
       "600 AI Credits",
       "~60 Q&A sessions",
-      "~30 meeting transcripts",
-      "Priority support",
-      "Advanced analytics"
+      "~30 Meeting Issues",
     ],
     popular: true
   },
@@ -39,10 +35,8 @@ export const CREDIT_PLANS = [
     features: [
       "1500 AI Credits",
       "~150 Q&A sessions",
-      "~75 meeting transcripts",
-      "24/7 Premium support",
-      "Custom integrations",
-      "Dedicated account manager"
+      "~75 Meeting Issues",
+
     ],
     popular: false
   },

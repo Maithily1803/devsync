@@ -1,7 +1,7 @@
 // src/app/api/meeting-detail/[meetingId]/route.ts
 import { db } from "@/server/db";
 import { NextResponse } from "next/server";
-import { generateIssuesFromTranscript } from "@/lib/gemini-issues";
+import { generateIssuesFromTranscript } from "@/lib/issues";
 
 export async function GET(
   _req: Request,

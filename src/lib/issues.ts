@@ -1,4 +1,4 @@
-// src/lib/gemini-issues.ts
+// src/lib/issues.ts
 import OpenAI from "openai";
 import { z } from "zod";
 

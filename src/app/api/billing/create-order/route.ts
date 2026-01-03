@@ -24,7 +24,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid plan" }, { status: 400 });
     }
 
-    // Ensure user exists
+   
     await db.user.upsert({
       where: { id: userId },
       update: {},
@@ -34,7 +34,7 @@ export async function POST(req: Request) {
       },
     });
 
-    // Create Razorpay order
+    // create razorpay order
     const order = await razorpay.orders.create({
       amount: plan.price * 100, // Convert to paise
       currency: "INR",
@@ -46,7 +46,7 @@ export async function POST(req: Request) {
       },
     });
 
-    // Store payment record
+   
     await db.payment.create({
       data: {
         userId,

@@ -12,7 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import IssueDialog from "../issue-dialog";
-import type { Issue } from "@/lib/gemini-issues";
+import type { Issue } from "@/lib/issues";
 
 type Meeting = {
   id: string;

@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 import axios from "axios";
 import { db } from "@/server/db";
-import { generateIssuesFromTranscript } from "@/lib/gemini-issues";
+import { generateIssuesFromTranscript } from "@/lib/issues";
 
 export async function POST(req: Request) {
   try {

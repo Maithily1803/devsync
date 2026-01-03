@@ -10,7 +10,6 @@ export async function POST(req: Request) {
       razorpay_signature,
     } = await req.json();
 
-    // Verify signature
     const body = razorpay_order_id + "|" + razorpay_payment_id;
     const expectedSignature = crypto
       .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET!)
@@ -35,7 +34,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // Update payment and add credits atomically
+    
     await db.$transaction([
       db.payment.update({
         where: { id: payment.id },
@@ -57,7 +56,7 @@ export async function POST(req: Request) {
       credits: payment.credits 
     });
   } catch (error) {
-    console.error("❌ Verify payment error:", error);
+    console.error("Verify payment error:", error);
     return NextResponse.json(
       { error: "Verification failed" },
       { status: 500 }

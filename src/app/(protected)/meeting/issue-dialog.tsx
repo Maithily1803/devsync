@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { Clock, AlertCircle } from 'lucide-react'
-import type { Issue } from '@/lib/gemini-issues'
+import type { Issue } from '@/lib/issues'
 
 type Props = {
   issue: Issue | null
