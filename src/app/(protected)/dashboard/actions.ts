@@ -1,48 +1,74 @@
 'use server';
+
 import { createStreamableValue } from "@ai-sdk/rsc";
-import { openai, GEMINI_MODELS } from "@/lib/gemini";
-import { generateEmbedding } from "@/lib/gemini";
+import OpenAI from "openai";
+import { generateEmbedding } from "@/lib/ai-service";
 import { db } from "@/server/db";
 
+const openai = new OpenAI({
+  apiKey: process.env.OPENROUTER_API_KEY!,
+  baseURL: "https://openrouter.ai/api/v1",
+  defaultHeaders: {
+    "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+  },
+});
 
-async function requestWithBackoff(
-  fn: () => Promise<any>,
-  maxAttempts = 3,
-  baseDelay = 1000
-): Promise<any> {
-  let attempt = 0;
-  
-  while (attempt < maxAttempts) {
-    try {
-      return await fn();
-    } catch (err: any) {
-      attempt++;
-      
-      console.error(`Attempt ${attempt} failed:`, err.message);
-      
-      if (err.status !== 503 && err.status !== 429) {
-        throw err;
-      }
-      
-      if (attempt >= maxAttempts) {
-        throw err;
-      }
-      
-      const delay = baseDelay * Math.pow(2, attempt - 1);
-      console.log(`Retrying in ${delay}ms...`);
-      await new Promise((resolve) => setTimeout(resolve, delay));
-    }
+function classifyQuestion(question: string) {
+  const q = question.toLowerCase();
+
+  if (
+    q.includes("project name") ||
+    q.includes("name of this project")
+  ) {
+    return "META_PROJECT_NAME";
   }
-  
-  throw new Error("Max retries exceeded");
-}
 
-//q&a//
+  if (
+    q.includes("does this project use") ||
+    q.includes("which ai") ||
+    q.includes("which model")
+  ) {
+    return "ARCHITECTURE";
+  }
+
+  return "CODE";
+}
 
 export async function askQuestion(question: string, projectId: string) {
   const stream = createStreamableValue<string>();
+  const questionType = classifyQuestion(question);
 
-  
+  console.log("❓ Question:", question);
+  console.log("🧭 Question type:", questionType);
+
+  /* ---------------- META QUESTIONS ---------------- */
+  if (questionType === "META_PROJECT_NAME") {
+    const project = await db.project.findUnique({
+      where: { id: projectId },
+      select: { name: true },
+    });
+
+    stream.update(
+      project
+        ? `The project is called **${project.name}**.`
+        : "I couldn’t find the project name."
+    );
+    stream.done();
+
+    return {
+      output: stream.value,
+      filesReferences: [],
+    };
+  }
+
+  /* ---------------- ARCHITECTURE QUESTIONS ---------------- */
+  if (questionType === "ARCHITECTURE") {
+    stream.update(
+      "I’ll look through the codebase to see if this is explicitly defined.\n\n"
+    );
+  }
+
+  /* ---------------- CODE QUESTIONS ---------------- */
   let result: {
     fileName: string;
     sourceCode: string;
@@ -50,162 +76,104 @@ export async function askQuestion(question: string, projectId: string) {
     similarity: number;
   }[] = [];
 
-  console.log("Question:", question);
-  console.log("Project ID:", projectId);
-
   try {
-    // generate embedding
-    console.log("Generating question embedding...");
+    console.log("🔍 Generating embedding...");
     const queryVector = await generateEmbedding(question);
-    
+
     if (!queryVector || queryVector.length === 0) {
-      throw new Error("Failed to generate question embedding");
+      throw new Error("Failed to generate embedding");
     }
 
     const vectorQuery = `[${queryVector.join(",")}]`;
-    console.log(`Embedding generated (${queryVector.length} dimensions)`);
 
-    // fetch relevant files 
-    console.log("🔍 Searching for relevant files...");
-    
+    console.log("📊 Searching codebase...");
     result = await db.$queryRaw`
       SELECT "fileName", "sourceCode", "summary",
         1 - ("summaryEmbedding" <=> ${vectorQuery}::vector) AS similarity
       FROM "SourceCodeEmbedding"
-      WHERE 1 - ("summaryEmbedding" <=> ${vectorQuery}::vector) > 0.5
+      WHERE 1 - ("summaryEmbedding" <=> ${vectorQuery}::vector) > 0.25
         AND "projectId" = ${projectId}
       ORDER BY similarity DESC
       LIMIT 10
-    ` as { fileName: string; sourceCode: string; summary: string; similarity: number }[];
+    ` as any;
 
-    console.log(`Found ${result.length} relevant files`);
-    
-    if (result.length > 0) {
-      console.log("Top matches:");
-      result.slice(0, 3).forEach((r, i) => {
-        console.log(`  ${i + 1}. ${r.fileName} (similarity: ${(r.similarity * 100).toFixed(1)}%)`);
-      });
+    console.log(`✅ Found ${result.length} relevant files`);
+
+    if (result.length === 0) {
+      stream.update(
+        "I couldn’t find relevant code files for this question.\n\n" +
+        "This likely means the information is not implemented in the codebase, " +
+        "or it exists only as a product or configuration detail."
+      );
+      stream.done();
+
+      return {
+        output: stream.value,
+        filesReferences: [],
+      };
     }
 
-    // context string
+    /* ---------------- BUILD CONTEXT ---------------- */
     let context = "";
     for (const doc of result) {
-      // truncate long source code
-      const truncatedCode = doc.sourceCode.length > 3000 
-        ? doc.sourceCode.slice(0, 3000) + "\n\n[... truncated ...]"
-        : doc.sourceCode;
+      const code =
+        doc.sourceCode.length > 3000
+          ? doc.sourceCode.slice(0, 3000) + "\n[...truncated]"
+          : doc.sourceCode;
 
       context += `
-═══════════════════════════════════════
+═══════════════════════════════════
 FILE: ${doc.fileName}
 SUMMARY: ${doc.summary}
 CODE:
-${truncatedCode}
-═══════════════════════════════════════
-
+${code}
+═══════════════════════════════════
 `;
     }
 
-    console.log(`Context built: ${context.length} characters`);
-
-    // stream AI response
-    console.log("Streaming AI response...");
-
+    /* ---------------- STREAM RESPONSE ---------------- */
     (async () => {
       try {
-        const messages = [
-          {
-            role: "system" as const,
-            content: `You are an expert full-stack developer assistant helping users understand their codebase.
+        const completion = await openai.chat.completions.create({
+          model: "openai/gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: `You are a senior software engineer reviewing a codebase.
 
-**Your Role:**
-- Answer questions about code structure, functionality, and implementation
-- Provide clear, accurate technical explanations
-- Reference specific files and code sections when relevant
-- Give actionable advice when asked for guidance
+Rules:
+- Answer ONLY using the provided code context
+- Reference real file names
+- Be precise and technical
+- If the answer is not present, say so clearly
+- Use markdown for code blocks`,
+            },
+            {
+              role: "user",
+              content: `CODEBASE:\n${context}\n\nQUESTION:\n${question}`,
+            },
+          ],
+          stream: true,
+          temperature: 0.2,
+          max_tokens: 1000,
+        });
 
-**Context Provided:**
-You have access to relevant files from the user's codebase, including:
-- File paths and names
-- Code summaries
-- Source code snippets
-
-**Response Guidelines:**
-1. **Be Specific**: Reference actual file names and code when answering
-2. **Be Accurate**: Only use information from the provided context
-3. **Be Concise**: Keep responses under 300 words unless more detail is needed
-4. **Use Markdown**: Format code with \`backticks\` and use bullet points
-5. **Admit Uncertainty**: If context doesn't contain the answer, say so clearly
-
-**Example Response Format:**
-Based on your codebase, here's what I found:
-
-The [feature/component] is implemented in \`path/to/file.ts\`. Here's how it works:
-
-• **Main functionality**: [explanation]
-• **Key dependencies**: [list]
-• **Integration points**: [where it connects]
-
-To [achieve user's goal], you would need to modify \`specific-file.ts\` by [specific action].
-
-**If Insufficient Context:**
-"I don't see enough information in the provided context to fully answer that. However, based on what's available, [partial answer if possible]. Could you provide more specific details about [what's needed]?"`,
-          },
-          {
-            role: "user" as const,
-            content: `CODEBASE CONTEXT:
-${context}
-
-USER QUESTION:
-${question}
-
-Please answer the question based ONLY on the codebase context provided above. Be specific and reference actual files and code.`,
-          },
-        ];
-
-        // stream the completion
-        const completion = await requestWithBackoff(() => 
-          openai.chat.completions.create({
-            model: GEMINI_MODELS.PRIMARY,
-            messages,
-            stream: true,
-            max_tokens: 1000,
-            temperature: 0.3,
-          })
-        );
-
-        let totalChunks = 0;
         for await (const chunk of completion) {
           const delta = chunk.choices?.[0]?.delta?.content;
-          if (delta) {
-            stream.update(delta);
-            totalChunks++;
-          }
+          if (delta) stream.update(delta);
         }
 
-        console.log(`streaming complete (${totalChunks} chunks)`);
         stream.done();
-
       } catch (err: any) {
-        console.error("streaming error:", err);
-        
-        // error message 
-        stream.update(
-          "\n\n **Error generating response.** " +
-          "This might be due to rate limits or API issues. " +
-          "Please try again in a moment."
-        );
+        console.error("❌ Streaming error:", err.message);
+        stream.update("\n\n**Error:** " + err.message);
         stream.done();
       }
     })();
 
   } catch (err: any) {
-    console.error("Question processing error:", err);
-    
-    stream.update(
-      "\n\n **Error processing your question.** " +
-      `Details: ${err.message}`
-    );
+    console.error("❌ Question error:", err.message);
+    stream.update("\n\n**Error:** " + err.message);
     stream.done();
   }
 

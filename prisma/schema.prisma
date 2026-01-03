@@ -21,7 +21,7 @@ model User {
   UserToProjects   UserToProject[]
   questions        Question[]
   payments         Payment[]
-  creditUsages     CreditUsage[]   // ✅ ADD THIS
+  creditUsages     CreditUsage[]   
 }
 
 
@@ -38,7 +38,7 @@ model Project {
   UserToProjects       UserToProject[]
   savedQuestions       Question[]
   meetings             Meeting[]
-  creditUsages         CreditUsage[]   // ✅ ADD THIS
+  creditUsages         CreditUsage[]   
 }
 
 model UserToProject {
@@ -55,13 +55,14 @@ model UserToProject {
 
 model SourceCodeEmbedding {
   id               String                 @id @default(cuid())
-  summaryEmbedding Unsupported("vector")?
+  summaryEmbedding Unsupported("vector(3072)")?
   sourceCode       String
   fileName         String
   summary          String
   projectId        String
   project          Project                @relation(fields: [projectId], references: [id])
 }
+
 
 model Question {
   id                 String   @id @default(cuid())
@@ -94,7 +95,7 @@ model Commit {
   commitAuthorName   String
   commitAuthorAvatar String
   commitDate         DateTime
-  summary            String?
+  summary           String   @default("")
   project            Project  @relation(fields: [projectId], references: [id])
 }
 

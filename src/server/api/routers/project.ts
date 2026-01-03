@@ -9,44 +9,47 @@ export const projectRouter = createTRPCRouter({
       z.object({
         name: z.string().min(1, "Project name is required"),
         githubUrl: z.string().url("Invalid GitHub URL"),
-        githubToken: z.string().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const userId = ctx.userId; // ✅ directly available from auth()
+      const userId = ctx.userId;
 
-      // ensure user exists
+      // Ensure user exists
       await ctx.db.user.upsert({
         where: { id: userId },
         update: {},
         create: {
           id: userId,
-          emailAddress: "", // Clerk auto-provided but safe to leave empty
+          emailAddress: "",
         },
       });
 
-      // ✅ Create project with correct URL
+      // ✅ Create project
       const project = await ctx.db.project.create({
         data: {
           name: input.name,
           githubUrl: input.githubUrl,
-          githubToken: input.githubToken,
           UserToProjects: {
             create: { userId },
           },
         },
       });
 
-      // ✅ Index and fetch commits
-      indexGithubRepo(project.id, input.githubUrl, input.githubToken)
-      .then(() => pollCommits(project.id))
-      .catch(console.error);
+      // ✅ Index repo in background (no await)
+      indexGithubRepo(project.id, input.githubUrl)
+        .then(() => {
+          console.log(`✅ Indexing complete for project: ${project.id}`);
+          return pollCommits(project.id);
+        })
+        .catch((err) => {
+          console.error(`❌ Background indexing failed: ${err.message}`);
+        });
 
       return project;
     }),
 
   getProjects: protectedProcedure.query(async ({ ctx }) => {
-    const userId = ctx.userId; // ✅ use this consistently
+    const userId = ctx.userId;
 
     return await ctx.db.project.findMany({
       where: {
@@ -61,58 +64,78 @@ export const projectRouter = createTRPCRouter({
   getCommits: protectedProcedure
     .input(z.object({ projectId: z.string() }))
     .query(async ({ ctx, input }) => {
+      // Trigger background commit polling (non-blocking)
       pollCommits(input.projectId).catch(console.error);
+
       return await ctx.db.commit.findMany({
         where: { projectId: input.projectId },
         orderBy: { commitDate: "desc" },
       });
     }),
-    saveAnswer: protectedProcedure.input(z.object({
-      projectId: z.string(),
-      question: z.string(),
-      answer: z.string(),
-      filesReferences: z.any()
-    })).mutation(async ({ ctx, input }) => {
+
+  saveAnswer: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        question: z.string(),
+        answer: z.string(),
+        filesReferences: z.any(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
       return await ctx.db.question.create({
-        data:{
+        data: {
           answer: input.answer,
           filesReferences: input.filesReferences,
           projectId: input.projectId,
           question: input.question,
-          userId: ctx.userId
-
-        }
-      })
+          userId: ctx.userId,
+        },
+      });
     }),
-    getQuestions: protectedProcedure.input(z.object({ projectId: z.string()}))
-    .query(async ({ ctx, input}) =>{
+
+  getQuestions: protectedProcedure
+    .input(z.object({ projectId: z.string() }))
+    .query(async ({ ctx, input }) => {
       return await ctx.db.question.findMany({
         where: {
-          projectId: input.projectId
+          projectId: input.projectId,
         },
         include: {
-          user: true
+          user: true,
         },
         orderBy: {
-          createdAt: 'desc'
-        }
-      })
-    }),
-    archiveProject: protectedProcedure.input(z.object({ projectId: z.string()})).mutation(async ({ ctx,input})=> {
-      return await ctx.db.project.update({ where: { id: input.projectId}, data: { deletedAt: new Date()}})
-    }),
-    getTeamMembers: protectedProcedure.input(z.object({ projectId: z.string()})).query(async ({ ctx,input})=> {
-      return await ctx.db.userToProject.findMany({ where: { projectId: input.projectId}, include: { user: true}})
+          createdAt: "desc",
+        },
+      });
     }),
 
-    saveMeetingTranscript: protectedProcedure
+  archiveProject: protectedProcedure
+    .input(z.object({ projectId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      return await ctx.db.project.update({
+        where: { id: input.projectId },
+        data: { deletedAt: new Date() },
+      });
+    }),
+
+  getTeamMembers: protectedProcedure
+    .input(z.object({ projectId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      return await ctx.db.userToProject.findMany({
+        where: { projectId: input.projectId },
+        include: { user: true },
+      });
+    }),
+
+  saveMeetingTranscript: protectedProcedure
     .input(
       z.object({
         projectId: z.string(),
         name: z.string().min(1),
         audioUrl: z.string(),
         transcript: z.string().optional(),
-        status: z.string().optional(), // e.g. 'processing' | 'completed'
+        status: z.string().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -128,7 +151,6 @@ export const projectRouter = createTRPCRouter({
       return meeting;
     }),
 
-  // --- New: Get all meeting transcripts ---
   getMeetingTranscripts: protectedProcedure
     .input(z.object({ projectId: z.string() }))
     .query(async ({ ctx, input }) => {

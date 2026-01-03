@@ -1,75 +1,110 @@
+// src/lib/github-loader.ts
 import { GithubRepoLoader } from "@langchain/community/document_loaders/web/github";
 import { Document } from "@langchain/core/documents";
-import { generateEmbedding, summariseCode } from "./gemini";
+import { generateEmbedding, summariseCode } from "./ai-service";
 import { db } from "@/server/db";
 import pLimit from "p-limit";
 
-//load github docs 
+/* ---------------- Normalize GitHub URL ---------------- */
+function normalizeGithubUrl(url: string): string {
+  let normalized = url.replace(/\.git$/i, "");
+
+  if (!normalized.startsWith("http")) {
+    normalized = "https://" + normalized;
+  }
+
+  const match = normalized.match(/github\.com[\/:]([^\/]+)\/([^\/\?#]+)/);
+  if (match) {
+    const [, owner, repo] = match;
+    return `https://github.com/${owner}/${repo}`;
+  }
+
+  return normalized;
+}
+
+/* ---------------- Load GitHub Repo ---------------- */
 export const loadGithubRepo = async (
-  githubUrl: string, 
-  githubToken?: string
+  githubUrl: string
 ): Promise<Document[]> => {
-  console.log("Loading GitHub repository:", githubUrl);
+  console.log("📥 Loading GitHub repository:", githubUrl);
 
   try {
-    const loader = new GithubRepoLoader(githubUrl, {
-      accessToken: githubToken || "",
+    const cleanUrl = normalizeGithubUrl(githubUrl);
+    console.log("🔗 Normalized URL:", cleanUrl);
+
+    const url = new URL(cleanUrl);
+    const [, owner, repo] = url.pathname.split("/");
+
+    if (!owner || !repo) {
+      throw new Error("Invalid GitHub URL. Use: https://github.com/owner/repo");
+    }
+
+    console.log(`👤 Owner: ${owner}, 📦 Repo: ${repo}`);
+
+    const token = process.env.GITHUB_TOKEN;
+    if (!token) {
+      throw new Error("GITHUB_TOKEN not set in .env");
+    }
+
+    const loader = new GithubRepoLoader(cleanUrl, {
+      accessToken: token,
       branch: "main",
+      recursive: true,
       ignoreFiles: [
-        //lock files
         "package-lock.json",
         "yarn.lock",
         "pnpm-lock.yaml",
         "bun.lockb",
-        //build artifacts
         "*.min.js",
         "*.map",
-        //large data files
         "*.csv",
         "*.json",
-        //images
         "*.png",
         "*.jpg",
         "*.gif",
         "*.svg",
         "*.ico",
+        "*.woff*",
+        "*.ttf",
+        "*.eot",
       ],
-      recursive: true,
       unknown: "warn",
-      maxConcurrency: 5,
+      maxConcurrency: 2,
     });
 
     const docs = await loader.load();
-    console.log(`Loaded ${docs.length} files from repository`);
+    console.log(`✅ Loaded ${docs.length} files`);
 
-    // filter relevant file types
-    const filteredDocs = docs.filter(doc => {
+    const filtered = docs.filter((doc) => {
       const path = doc.metadata.source.toLowerCase();
       return (
         /\.(ts|tsx|js|jsx|mdx|html|css|md)$/i.test(path) &&
-        !path.includes('node_modules') &&
-        !path.includes('.next') &&
-        !path.includes('dist') &&
-        !path.includes('build')
+        !path.includes("node_modules") &&
+        !path.includes(".next") &&
+        !path.includes("dist") &&
+        !path.includes("build") &&
+        !path.includes(".git")
       );
     });
 
-    console.log(`Filtered to ${filteredDocs.length} relevant files`);
+    console.log(`✅ Filtered to ${filtered.length} code files`);
 
-    return filteredDocs;
+    if (filtered.length === 0) {
+      console.warn("⚠️ No code files found");
+    }
 
+    return filtered;
   } catch (error: any) {
-    console.error("Error loading GitHub repo:", error.message);
-    throw new Error(`Failed to load repository: ${error.message}`);
+    console.error("❌ GitHub loading error:", error.message);
+    throw error;
   }
 };
 
-//embeddings for multiple documents
-
+/* ---------------- Generate Embeddings ---------------- */
 const generateEmbeddings = async (docs: Document[]) => {
-  console.log(`Generating embeddings for ${docs.length} files...`);
-  
-  const limit = pLimit(3); // Process 3 files at a time
+  console.log(`🤖 Generating embeddings for ${docs.length} files...`);
+
+  const limit = pLimit(1);
   let successCount = 0;
   let failCount = 0;
 
@@ -77,26 +112,28 @@ const generateEmbeddings = async (docs: Document[]) => {
     docs.map((doc, index) =>
       limit(async () => {
         try {
-          console.log(`[${index + 1}/${docs.length}] Processing ${doc.metadata.source}`);
+          console.log(`[${index + 1}/${docs.length}] Processing: ${doc.metadata.source}`);
 
-          // generate summary
           const summary = await summariseCode(doc);
-          
-          if (!summary) {
-            console.warn(`Empty summary for ${doc.metadata.source}`);
+
+          // ✅ Accept any non-empty summary
+          if (!summary || summary.length === 0) {
+            console.warn(`⚠️ Empty summary: ${doc.metadata.source}`);
             return null;
           }
 
-          // generate embedding
           const embedding = await generateEmbedding(summary);
-          
-          if (!embedding || embedding.length === 0) {
-            console.warn(`Empty embedding for ${doc.metadata.source}`);
+
+          // ✅ Reject invalid embeddings explicitly
+          if (!embedding || embedding.length !== 1536) {
+            console.warn(
+              `⚠️ Invalid embedding (${embedding.length}) for ${doc.metadata.source}`
+            );
             return null;
           }
 
           successCount++;
-          console.log(`[${index + 1}/${docs.length}] Success: ${doc.metadata.source}`);
+          console.log(`✅ [${successCount}/${docs.length}] ${doc.metadata.source}`);
 
           return {
             summary,
@@ -104,74 +141,60 @@ const generateEmbeddings = async (docs: Document[]) => {
             sourceCode: String(doc.pageContent),
             fileName: doc.metadata.source,
           };
-
         } catch (error: any) {
           failCount++;
-          console.error(`[${index + 1}/${docs.length}] Failed: ${doc.metadata.source}`, error.message);
+          console.error(
+            `❌ [${index + 1}/${docs.length}] ${doc.metadata.source}:`,
+            error.message
+          );
           return null;
         }
       })
     )
   );
 
-  // failed embeddings
   const embeddings = results
-    .map(result => result.status === "fulfilled" ? result.value : null)
+    .map((r) => (r.status === "fulfilled" ? r.value : null))
     .filter((item): item is NonNullable<typeof item> => item !== null);
 
-  console.log(`Embedding Results:`);
-  console.log(`Success: ${successCount}`);
-  console.log(`Failed: ${failCount}`);
-  console.log(`Total: ${embeddings.length} embeddings generated`);
-
+  console.log(`📊 Results: ${successCount} success, ${failCount} failed`);
   return embeddings;
 };
 
-//github repo index
-
+/* ---------------- Index GitHub Repo ---------------- */
 export const indexGithubRepo = async (
   projectId: string,
-  githubUrl: string,
-  githubToken?: string
+  githubUrl: string
 ) => {
-  console.log("Starting repository indexing...");
-  console.log(`Project ID: ${projectId}`);
-  console.log(` GitHub URL: ${githubUrl}`);
+  console.log("🚀 Starting repository indexing...");
+  console.log(`📦 Project: ${projectId}`);
+  console.log(`🔗 GitHub: ${githubUrl}`);
 
   try {
-    //load documents from GitHub
-    const docs = await loadGithubRepo(githubUrl, githubToken);
+    const docs = await loadGithubRepo(githubUrl);
 
     if (docs.length === 0) {
-      console.warn("No files found to index");
+      console.warn("⚠️ No files to index");
       return;
     }
 
-    //generate embeddings
     const allEmbeddings = await generateEmbeddings(docs);
 
     if (allEmbeddings.length === 0) {
-      console.error("No embeddings were generated successfully");
+      console.error("❌ No embeddings generated");
       return;
     }
 
-    //store in database with rate limiting
-    const limit = pLimit(2);
+    const limit = pLimit(1);
     let savedCount = 0;
 
-    console.log(`Saving ${allEmbeddings.length} embeddings to database...`);
+    console.log(`💾 Saving ${allEmbeddings.length} embeddings...`);
 
-    const saveResults = await Promise.allSettled(
-      allEmbeddings.map((embedding, index) =>
+    await Promise.allSettled(
+      allEmbeddings.map((embedding) =>
         limit(async () => {
           try {
-            if (!embedding || !embedding.embedding || embedding.embedding.length === 0) {
-              console.warn(`Skipping ${embedding?.fileName} - invalid embedding`);
-              return;
-            }
-
-            //create the record
-            const sourceCodeEmbedding = await db.sourceCodeEmbedding.create({
+            const record = await db.sourceCodeEmbedding.create({
               data: {
                 summary: embedding.summary,
                 sourceCode: embedding.sourceCode,
@@ -180,31 +203,25 @@ export const indexGithubRepo = async (
               },
             });
 
-            //update with vector
             const vectorLiteral = `[${embedding.embedding.join(",")}]`;
             await db.$executeRawUnsafe(
               `UPDATE "SourceCodeEmbedding"
                SET "summaryEmbedding" = '${vectorLiteral}'::vector
-               WHERE "id" = '${sourceCodeEmbedding.id}'`
+               WHERE "id" = '${record.id}'`
             );
 
             savedCount++;
-            console.log(`[${savedCount}/${allEmbeddings.length}] Saved: ${embedding.fileName}`);
-
+            console.log(`💾 [${savedCount}/${allEmbeddings.length}] Saved: ${embedding.fileName}`);
           } catch (error: any) {
-            console.error(`Failed to save ${embedding.fileName}:`, error.message);
+            console.error(`❌ Save failed: ${embedding.fileName}`, error.message);
           }
         })
       )
     );
 
-    console.log(`Indexing complete!`);
-    console.log(`Results:`);
-    console.log(`Saved: ${savedCount}`);
-    console.log(`Failed: ${allEmbeddings.length - savedCount}`);
-
+    console.log(`✅ Indexing complete! ${savedCount}/${allEmbeddings.length} files saved`);
   } catch (error: any) {
-    console.error("Indexing failed:", error.message);
+    console.error("❌ Indexing failed:", error.message);
     throw error;
   }
 };
