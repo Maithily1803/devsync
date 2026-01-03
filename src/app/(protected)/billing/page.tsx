@@ -4,7 +4,7 @@ import Script from "next/script";
 import { useEffect, useState } from "react";
 import { CREDIT_PLANS } from "@/lib/credit-plans";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { 
@@ -14,9 +14,9 @@ import {
   TrendingUp, 
   Clock,
   Loader2,
-  Sparkles
+  Sparkles,
+  RefreshCw
 } from "lucide-react";
-import { Progress } from "@/components/ui/progress";
 
 type CreditStats = {
   current: number;
@@ -39,24 +39,24 @@ export default function BillingPage() {
   const [loading, setLoading] = useState(true);
   const [purchasing, setPurchasing] = useState(false);
 
+  const fetchCredits = async () => {
+    try {
+      const res = await fetch("/api/credits/stats");
+      const data = await res.json();
+
+      setStats(data.stats ?? null);
+      setHistory(Array.isArray(data.history) ? data.history : []);
+    } catch (error) {
+      console.error("Failed to fetch credits:", error);
+      setHistory([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchCredits();
   }, []);
-
-  const fetchCredits = async () => {
-  try {
-    const res = await fetch("/api/credits/stats");
-    const data = await res.json();
-
-    setStats(data.stats ?? null);
-    setHistory(Array.isArray(data.history) ? data.history : []);
-  } catch (error) {
-    console.error("Failed to fetch credits:", error);
-    setHistory([]); // guarantee array
-  } finally {
-    setLoading(false);
-  }
-};
 
   const buyCredits = async (planId: string) => {
     try {
@@ -89,7 +89,7 @@ export default function BillingPage() {
             const data = await verifyRes.json();
 
             if (data.success) {
-              toast.success(`${data.credits} credits added successfully! 🎉`);
+              toast.success(`${data.credits} credits added! 🎉`);
               fetchCredits();
             } else {
               toast.error("Payment verification failed");
@@ -99,13 +99,8 @@ export default function BillingPage() {
           }
         },
 
-        prefill: {
-          email: "",
-        },
-
-        theme: {
-          color: "#E8AF4C",
-        },
+        prefill: { email: "" },
+        theme: { color: "#E8AF4C" },
 
         modal: {
           ondismiss: () => {
@@ -137,6 +132,9 @@ export default function BillingPage() {
     return labels[action] || action;
   };
 
+  const creditPercentage = Math.min((stats?.current || 0) / 100, 1) * 100;
+  const isLowCredits = (stats?.current || 0) < 50;
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[70vh]">
@@ -145,45 +143,48 @@ export default function BillingPage() {
     );
   }
 
-  const creditPercentage = Math.min((stats?.current || 0) / 100, 1) * 100;
-  const isLowCredits = (stats?.current || 0) < 50;
-
   return (
     <>
       <Script src="https://checkout.razorpay.com/v1/checkout.js" />
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-8">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold flex items-center gap-3">
-            <Zap className="h-8 w-8 text-primary" />
-            Credits & Billing
-          </h1>
-          <p className="text-muted-foreground mt-2">
-            Manage your AI credits and view usage history
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-3">
+              <Zap className="h-7 w-7 text-primary" />
+              Credits
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Manage your AI credits
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fetchCredits}
+            className="gap-2"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </Button>
         </div>
 
-        {/* Stats Overview */}
-        <div className="grid gap-6 md:grid-cols-3">
+        {/* Stats */}
+        <div className="grid gap-4 md:grid-cols-3">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">
-                Current Balance
-              </CardTitle>
-              <Zap className="h-4 w-4 text-primary" />
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-muted-foreground">
+                  Current Balance
+                </span>
+                <Zap className="h-4 w-4 text-primary" />
+              </div>
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold">{stats?.current || 0}</div>
-              <p className="text-xs text-muted-foreground mt-1">
-                AI Credits available
-              </p>
-              <Progress 
-                value={creditPercentage} 
-                className="mt-3"
-              />
               {isLowCredits && (
-                <Badge variant="destructive" className="mt-2">
+                <Badge variant="destructive" className="mt-2 text-xs">
                   Low Balance
                 </Badge>
               )}
@@ -191,91 +192,88 @@ export default function BillingPage() {
           </Card>
 
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">
-                Total Spent
-              </CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-muted-foreground">
+                  Total Used
+                </span>
+                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              </div>
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold">{stats?.totalSpent || 0}</div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Credits consumed
-              </p>
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">
-                Last 30 Days
-              </CardTitle>
-              <Clock className="h-4 w-4 text-muted-foreground" />
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-muted-foreground">
+                  Last 30 Days
+                </span>
+                <Clock className="h-4 w-4 text-muted-foreground" />
+              </div>
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold">
                 {stats?.lastMonthUsage || 0}
               </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Credits used this month
-              </p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Credit Plans */}
+        {/* Plans */}
         <div>
-          <h2 className="text-2xl font-semibold mb-6 flex items-center gap-2">
-            <Sparkles className="h-6 w-6 text-primary" />
-            Choose Your Plan
+          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-primary" />
+            Buy Credits
           </h2>
 
-          <div className="grid gap-6 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-3">
             {CREDIT_PLANS.map((plan) => (
               <Card
                 key={plan.id}
                 className={`relative ${
-                  plan.popular
-                    ? "ring-2 ring-primary shadow-lg scale-105"
-                    : ""
+                  plan.popular ? "ring-2 ring-primary shadow-lg" : ""
                 }`}
               >
                 {plan.popular && (
-                  <Badge className="absolute -top-3 left-1/2 -translate-x-1/2">
-                    Most Popular
+                  <Badge className="absolute -top-2 left-1/2 -translate-x-1/2 text-xs">
+                    Popular
                   </Badge>
                 )}
 
                 <CardHeader>
-                  <CardTitle className="text-xl">{plan.name}</CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    {plan.description}
-                  </p>
+                  <div>
+                    <h3 className="font-semibold text-lg">{plan.name}</h3>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {plan.description}
+                    </p>
+                  </div>
                 </CardHeader>
 
-                <CardContent className="space-y-6">
+                <CardContent className="space-y-4">
                   <div>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-4xl font-bold">₹{plan.price}</span>
-                      <span className="text-muted-foreground">one-time</span>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-3xl font-bold">₹{plan.price}</span>
+                      <span className="text-sm text-muted-foreground">one-time</span>
                     </div>
                     <p className="text-sm text-primary font-semibold mt-1">
-                      {plan.credits} AI Credits
+                      {plan.credits} Credits
                     </p>
                   </div>
 
-                  <ul className="space-y-3">
+                  <ul className="space-y-2">
                     {plan.features.map((feature, idx) => (
-                      <li key={idx} className="flex items-start gap-2">
-                        <Check className="h-5 w-5 text-primary shrink-0 mt-0.5" />
-                        <span className="text-sm">{feature}</span>
+                      <li key={idx} className="flex items-start gap-2 text-sm">
+                        <Check className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                        <span>{feature}</span>
                       </li>
                     ))}
                   </ul>
 
                   <Button
                     className="w-full"
-                    size="lg"
                     variant={plan.popular ? "default" : "outline"}
                     onClick={() => buyCredits(plan.id)}
                     disabled={purchasing}
@@ -298,53 +296,41 @@ export default function BillingPage() {
           </div>
         </div>
 
-        {/* Usage History */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Activity</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {history.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">
-                No activity yet. Start using Devsync to see your usage here!
-              </p>
-            ) : (
-              <div className="space-y-4">
+        {/* Recent Activity */}
+        {history.length > 0 && (
+          <Card>
+            <CardHeader>
+              <h3 className="font-semibold">Recent Activity</h3>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
                 {history.map((item) => (
                   <div
                     key={item.id}
-                    className="flex items-center justify-between p-4 rounded-lg border"
+                    className="flex items-center justify-between p-3 rounded-lg border"
                   >
-                    <div className="flex items-center gap-4">
-                      <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                        <Zap className="h-5 w-5 text-primary" />
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+                        <Zap className="h-4 w-4 text-primary" />
                       </div>
                       <div>
-                        <p className="font-medium">
+                        <p className="text-sm font-medium">
                           {getActionLabel(item.action)}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {new Date(item.createdAt).toLocaleString()}
-                          {item.project && ` • ${item.project.name}`}
                         </p>
                       </div>
                     </div>
-                    <Badge variant="secondary">-{item.credits} credits</Badge>
+                    <Badge variant="secondary" className="text-xs">
+                      -{item.credits}
+                    </Badge>
                   </div>
                 ))}
               </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Footer Note */}
-        <Card className="bg-muted/50">
-          <CardContent className="py-4">
-            <p className="text-sm text-center text-muted-foreground">
-              💳 Secure payments powered by Razorpay • 🔒 All transactions are encrypted
-            </p>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </>
   );

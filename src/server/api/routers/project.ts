@@ -14,7 +14,6 @@ export const projectRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.userId;
 
-      // Ensure user exists
       await ctx.db.user.upsert({
         where: { id: userId },
         update: {},
@@ -24,7 +23,6 @@ export const projectRouter = createTRPCRouter({
         },
       });
 
-      // ✅ Create project
       const project = await ctx.db.project.create({
         data: {
           name: input.name,
@@ -35,7 +33,6 @@ export const projectRouter = createTRPCRouter({
         },
       });
 
-      // ✅ Index repo in background (no await)
       indexGithubRepo(project.id, input.githubUrl)
         .then(() => {
           console.log(`✅ Indexing complete for project: ${project.id}`);
@@ -64,7 +61,6 @@ export const projectRouter = createTRPCRouter({
   getCommits: protectedProcedure
     .input(z.object({ projectId: z.string() }))
     .query(async ({ ctx, input }) => {
-      // Trigger background commit polling (non-blocking)
       pollCommits(input.projectId).catch(console.error);
 
       return await ctx.db.commit.findMany({
@@ -107,6 +103,15 @@ export const projectRouter = createTRPCRouter({
         orderBy: {
           createdAt: "desc",
         },
+      });
+    }),
+
+  // ✅ NEW: Delete question
+  deleteQuestion: protectedProcedure
+    .input(z.object({ questionId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      return await ctx.db.question.delete({
+        where: { id: input.questionId },
       });
     }),
 

@@ -1,7 +1,13 @@
 'use client'
+
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogHeader, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogHeader,
+  DialogContent,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import useProject from '@/hooks/use-project'
 import React from 'react'
@@ -13,6 +19,7 @@ import CodeReferences from './code-references'
 import { api } from '@/trpc/react'
 import { toast } from 'sonner'
 import useRefetch from '@/hooks/use-refetch'
+import { Loader2 } from 'lucide-react'
 
 const AskQuestionCard = () => {
   const { project } = useProject()
@@ -23,148 +30,167 @@ const AskQuestionCard = () => {
   const [filesReferences, setFilesReferences] = React.useState<
     { fileName: string; sourceCode: string; summary: string }[]
   >([])
+
   const saveAnswer = api.project.saveAnswer.useMutation()
   const refetch = useRefetch()
 
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    if (!project?.id) return
+    if (!project?.id || !question.trim()) return
+
     setLoading(true)
     setAnswer('')
     setFilesReferences([])
 
-    const { output, filesReferences } = await askQuestion(question, project.id)
-    setOpen(true)
-    setFilesReferences(filesReferences)
+    try {
+      const { output, filesReferences } = await askQuestion(
+        question,
+        project.id
+      )
+      setOpen(true)
+      setFilesReferences(filesReferences)
 
-    for await (const delta of readStreamableValue(output)) {
-      if (delta) setAnswer((ans) => ans + delta)
+      let fullAnswer = ''
+      for await (const delta of readStreamableValue(output)) {
+        if (delta) {
+          fullAnswer += delta
+          setAnswer(fullAnswer)
+        }
+      }
+
+      if (fullAnswer) {
+        saveAnswer.mutate(
+          {
+            projectId: project.id,
+            question,
+            answer: fullAnswer,
+            filesReferences,
+          },
+          {
+            onSuccess: () => {
+              toast.success('Answer saved automatically!')
+              refetch()
+            },
+            onError: () => {
+              toast.error('Failed to save answer')
+            },
+          }
+        )
+      }
+    } catch {
+      toast.error('Failed to get answer')
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   return (
     <>
-      {/* ---------------- Dialog ---------------- */}
+     
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
           className="
             w-[95vw]
-            max-w-full
-            sm:max-w-[80vw]
-            text-sm sm:text-lg
-            px-4 sm:px-6
+            max-w-[95vw]
+            sm:max-w-[90vw]
+            md:max-w-[80vw]
+            lg:max-w-[70vw]
+            max-h-[90vh]
+            p-0
+            flex flex-col
+            overflow-hidden
           "
         >
-          <DialogHeader>
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-              <DialogTitle>
-                <Image src="/logo.png" alt="devsync" width={36} height={36} />
+          <DialogHeader className="px-4 sm:px-6 py-4 border-b">
+            <div className="flex items-center gap-3">
+              <Image src="/logo.png" alt="devsync" width={28} height={28} />
+              <DialogTitle className="text-base sm:text-lg font-semibold">
+                Devsync Answer
               </DialogTitle>
-
-              <Button
-                disabled={saveAnswer.isPending}
-                variant="outline"
-                className="
-                  w-full sm:w-auto
-                  text-sm sm:text-base
-                  px-3 sm:px-4
-                  shrink-0
-                "
-                onClick={() => {
-                  saveAnswer.mutate(
-                    {
-                      projectId: project!.id,
-                      question,
-                      answer,
-                      filesReferences,
-                    },
-                    {
-                      onSuccess: () => {
-                        toast.success('Answer saved!')
-                        refetch()
-                      },
-                      onError: () => {
-                        toast.error('Failed to save answer!')
-                      },
-                    }
-                  )
-                }}
-              >
-                Save Answers
-              </Button>
             </div>
           </DialogHeader>
+          <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-5">
+            <div className="space-y-2">
+              <h3 className="text-sm sm:text-base font-semibold text-muted-foreground">
+                Answer
+              </h3>
 
-          {/* Answer */}
-          <MDEditor.Markdown
-            source={answer}
-            className="
-              max-w-full
-              max-h-[45vh]
-              overflow-auto
-              break-words
-              text-sm sm:text-lg
-            "
-          />
+              <div className="rounded-lg bg-muted/30 p-4 sm:p-5">
+                <MDEditor.Markdown
+                  source={answer || 'Generating answer...'}
+                  className="
+                    rounded-lg
+                    prose prose-sm sm:prose
+                    max-w-none
+                    leading-relaxed
+                  "
+                />
+              </div>  
+            </div>
 
-          <div className="h-4" />
-          <CodeReferences filesReferences={filesReferences} />
+            {filesReferences.length > 0 && (
+              <div className="space-y-2">
+                <h3 className="text-sm sm:text-base font-semibold text-muted-foreground">
+                  Code References
+                </h3>
+                <CodeReferences filesReferences={filesReferences} />
+              </div>
+            )}
+          </div>
 
-          <Button
-            type="button"
-            className="w-full sm:w-auto shrink-0"
-            onClick={() => {
-              setOpen(false)
-              setAnswer('')
-            }}
-          >
-            Close
-          </Button>
+          <div className="border-t px-4 sm:px-6 py-3">
+            <Button
+              type="button"
+              className="w-full text-sm sm:text-base"
+              onClick={() => {
+                setOpen(false)
+                setQuestion('')
+                setAnswer('')
+              }}
+            >
+              Close
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
-      {/* ---------------- Card ---------------- */}
-      <Card className="relative col-span-1 sm:col-span-3 text-base sm:text-lg">
+      
+      <Card className="col-span-1 sm:col-span-3">
         <CardHeader>
-          <CardTitle>Ask a question</CardTitle>
+          <CardTitle className="text-base sm:text-lg font-semibold">
+            Ask a question
+          </CardTitle>
         </CardHeader>
 
         <CardContent>
-          <form onSubmit={onSubmit}>
+          <form onSubmit={onSubmit} className="space-y-4">
             <Textarea
               className="
-                text-base sm:text-xl
-                placeholder:text-sm sm:placeholder:text-base
+                text-sm sm:text-base
                 leading-relaxed
-                min-h-[85px]
-                px-3 sm:px-4
-                py-2 sm:py-3
+                min-h-[110px]
+                resize-none
               "
-              placeholder="Which file should I edit to change the home page?"
+              placeholder="Eg: Which file should I edit to change the home page?"
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
+              disabled={loading}
             />
-
-            <div className="h-6 sm:h-8" />
 
             <Button
               type="submit"
               size="lg"
-              disabled={loading}
-              className="
-                w-full sm:w-auto
-                text-sm sm:text-base
-                font-semibold
-                cursor-pointer
-                disabled:cursor-not-allowed
-                transition-all duration-200
-                hover:bg-primary/90
-                hover:scale-[1.03]
-                active:scale-[0.97]
-              "
+              className="w-full text-sm sm:text-base cursor-pointer"
             >
-              {loading ? 'Thinking...' : 'Ask Devsync!'}
+
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Thinking…
+                </>
+              ) : (
+                'Ask Devsync'
+              )}
             </Button>
           </form>
         </CardContent>
@@ -174,5 +200,3 @@ const AskQuestionCard = () => {
 }
 
 export default AskQuestionCard
-
-

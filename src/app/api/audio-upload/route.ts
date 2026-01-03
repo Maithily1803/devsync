@@ -4,6 +4,7 @@ import { db } from "@/server/db";
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { startTranscription } from "@/lib/start-transcription";
+import { consumeCredits } from "@/lib/credit-service";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -35,6 +36,26 @@ export async function POST(req: Request) {
       );
     }
 
+    // ✅ Check credits BEFORE uploading
+    try {
+      await consumeCredits(
+        userId,
+        "MEETING_TRANSCRIBED",
+        projectId,
+        `Meeting: ${file.name}`
+      );
+      console.log("✅ Credits consumed successfully");
+    } catch (error: any) {
+      console.error("❌ Credit deduction failed:", error.message);
+      return NextResponse.json(
+        { 
+          error: "Insufficient credits. Please purchase more credits to continue.",
+          details: error.message 
+        },
+        { status: 402 }
+      );
+    }
+
     const project = await db.project.findUnique({
       where: { id: projectId },
     });
@@ -51,7 +72,6 @@ export async function POST(req: Request) {
     const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
     const filePath = `aud/${Date.now()}-${safeName}`;
 
-    // 🔥 IMPORTANT: upload FILE directly (no Buffer)
     const upload = await supabaseServer.storage
       .from("aud")
       .upload(filePath, file, {
@@ -89,7 +109,7 @@ export async function POST(req: Request) {
 
     console.log("✅ Meeting created:", meeting.id);
 
-    // 🚀 START TRANSCRIPTION (NO HTTP CALL)
+    // 🚀 START TRANSCRIPTION
     await startTranscription(audioUrl, meeting.id);
 
     return NextResponse.json(

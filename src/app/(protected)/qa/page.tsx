@@ -7,151 +7,211 @@ import {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-  SheetClose,
 } from '@/components/ui/sheet'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import useProject from '@/hooks/use-project'
 import { api } from '@/trpc/react'
 import AskQuestionCard from '../dashboard/ask-question-card'
 import MDEditor from '@uiw/react-md-editor'
 import CodeReferences from '../dashboard/code-references'
 import { useUser } from '@clerk/nextjs'
-import { X } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { toast } from 'sonner'
+import useRefetch from '@/hooks/use-refetch'
+
+/* ================= TYPES ================= */
+
+type FileReference = {
+  fileName: string
+  sourceCode: string
+  summary: string
+}
+
+function isFileReferenceArray(value: unknown): value is FileReference[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (v) =>
+        typeof v === 'object' &&
+        v !== null &&
+        'fileName' in v &&
+        'sourceCode' in v &&
+        'summary' in v
+    )
+  )
+}
+
 
 const QAPage = () => {
   const { projectId } = useProject()
-  const { data: questions } = api.project.getQuestions.useQuery({ projectId })
+  const { data: questions, isLoading } =
+    api.project.getQuestions.useQuery({ projectId })
+
+  const deleteQuestion = api.project.deleteQuestion.useMutation()
   const { user } = useUser()
+  const refetch = useRefetch()
+
   const [questionIndex, setQuestionIndex] = React.useState(0)
+  const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
+  const [questionToDelete, setQuestionToDelete] =
+    React.useState<string | null>(null)
 
   const question = questions?.[questionIndex]
 
+  const handleDelete = () => {
+    if (!questionToDelete) return
+
+    deleteQuestion.mutate(
+      { questionId: questionToDelete },
+      {
+        onSuccess: () => {
+          toast.success('Question deleted')
+          refetch()
+          setDeleteDialogOpen(false)
+          setQuestionToDelete(null)
+        },
+        onError: () => toast.error('Failed to delete question'),
+      }
+    )
+  }
+
   return (
-    <Sheet>
-      {/* Ask Question */}
-      <AskQuestionCard />
-
-      <div className="mx-auto max-w-6xl px-3 py-6 space-y-3">
-        <h1 className="text-lg sm:text-xl font-semibold">Saved Questions</h1>
-
-        <div className="flex flex-col gap-3">
-          {questions?.map((q, index) => (
-            <SheetTrigger key={q.id} onClick={() => setQuestionIndex(index)}>
-              <div
-                className="
-                  flex items-center gap-4
-                  bg-white
-                  rounded-lg
-                  p-4
-                  border
-                  shadow-sm
-                  cursor-pointer
-                  transition-all duration-200
-                  hover:shadow-md
-                  hover:border-primary/40
-                  active:scale-[0.99]
-                "
-              >
-                <img
-                  className="w-8 h-8 rounded-full border shrink-0"
-                  src={user?.imageUrl || '/default-avatar.png'}
-                  alt="User avatar"
-                  onError={(e) =>
-                    (e.currentTarget.src = '/default-avatar.png')
-                  }
-                />
-
-                <div className="flex flex-col flex-1 min-w-0 text-left">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm sm:text-base font-medium text-gray-700 line-clamp-1">
-                      {q.question}
-                    </p>
-                    <span className="text-xs sm:text-sm text-gray-400 whitespace-nowrap">
-                      {new Date(q.createdAt).toLocaleDateString()}
-                    </span>
-                  </div>
-
-                  <p className="mt-1 text-xs sm:text-sm text-gray-500 line-clamp-2">
-                    {q.answer}
-                  </p>
-                </div>
-              </div>
-            </SheetTrigger>
-          ))}
+    <div className="w-full">
+      <Sheet>
+        <div className="mb-6">
+          <AskQuestionCard />
         </div>
-      </div>
 
-      {/* ---------------- Sheet ---------------- */}
-      {question && (
-        <SheetContent
-            className="
-              w-[90vw]
-              max-w-[90vw]
-              sm:max-w-[75vw]
-              md:max-w-[70vw]
-              p-0
-              overflow-y-auto
-            "
-          >
-
-
-          {/* Sticky header ONLY */}
-          <SheetHeader
-            className="
-              sticky top-0 z-10
-              bg-background
-              border-b
-              px-4 sm:px-6
-              py-4
-            "
-          >
-            <div className="flex items-start justify-between gap-4">
-              <SheetTitle className="text-lg sm:text-2xl font-semibold leading-snug">
-                {question.question}
-              </SheetTitle>
-
-              <SheetClose asChild>
-                <button
-                  className="
-                    p-2
-                    rounded-md
-                    cursor-pointer
-                    transition
-                    hover:bg-muted
-                    active:scale-95
-                  "
-                  aria-label="Close"
-                >
-                  <X className="h-5 w-5 text-muted-foreground" />
-                </button>
-              </SheetClose>
-            </div>
-          </SheetHeader>
-
-          {/* Scrollable content */}
-          <div className="px-4 sm:px-6 py-5 space-y-6">
-            <MDEditor.Markdown
-              source={question.answer}
-              className="
-                prose
-                max-w-none
-                prose-neutral
-                leading-7
-                text-sm sm:text-base
-                rounded-lg
-                bg-muted/30
-                p-4 sm:p-5
-              "
-            />
-
-            <div className="border-t" />
-
-            <CodeReferences
-              filesReferences={(question.filesReferences ?? []) as any}
-            />
+        <div className="mx-auto max-w-6xl px-4 py-6 space-y-3">
+          <div className="flex justify-between items-center">
+            <h1 className="text-lg sm:text-xl font-semibold">
+              Saved Questions
+            </h1>
+            {questions && (
+              <span className="text-sm text-muted-foreground">
+                {questions.length} questions
+              </span>
+            )}
           </div>
+
+          {!isLoading && questions && (
+  <div className="space-y-3">
+    {questions.map((q, index) => (
+      <SheetTrigger
+        key={q.id}
+        onClick={() => setQuestionIndex(index)}
+        className="w-full text-left cursor-pointer"
+      >
+        <div className="rounded-lg border bg-white p-4 hover:shadow-sm transition">
+          <div className="flex gap-4 items-center">
+          
+            <img
+              src={user?.imageUrl || '/default-avatar.png'}
+              className="w-10 h-10 rounded-full border"
+              alt="avatar"
+            />
+
+           
+            <div className="flex-1 min-w-0 space-y-1">
+              
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm sm:text-base font-medium truncate">
+                  {q.question}
+                </p>
+
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="cursor-pointer"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setQuestionToDelete(q.id)
+                    setDeleteDialogOpen(true)
+                  }}
+                >
+                  <Trash2 className="h-4 w-4 text-red-600" />
+                </Button>
+              </div>
+
+            
+              <p className="text-sm text-muted-foreground line-clamp-2">
+                {q.answer}
+              </p>
+            </div>
+          </div>
+        </div>
+      </SheetTrigger>
+    ))}
+  </div>
+)}
+        </div>
+
+      
+        <SheetContent className="w-[95vw] sm:max-w-[80vw] p-0 overflow-y-auto">
+          {question && (
+            <>
+              <SheetHeader className="border-b px-6 py-4">
+                <SheetTitle className="text-base sm:text-lg font-semibold pr-10">
+                  {question.question}
+                </SheetTitle>
+              </SheetHeader>
+
+              <div className="px-6 py-6 space-y-6">
+                
+                <div>
+                  <h3 className="text-sm font-semibold mb-2">Answer:</h3>
+                  <div className="rounded-lg border bg-white">
+                    <MDEditor.Markdown
+                      source={question.answer}
+                      className="rounded-lg prose prose-sm sm:prose max-w-none p-4 m-0"
+                    />
+                  </div>
+                </div>
+
+                
+                {isFileReferenceArray(question.filesReferences) && (
+                  <>
+                    <div className="border-t" />
+                    <CodeReferences
+                      filesReferences={question.filesReferences}
+                    />
+                  </>
+                )}
+              </div>
+            </>
+          )}
         </SheetContent>
-      )}
-    </Sheet>
+      </Sheet>
+
+      
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Question?</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="cursor-pointer">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="cursor-pointer bg-primary"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   )
 }
 

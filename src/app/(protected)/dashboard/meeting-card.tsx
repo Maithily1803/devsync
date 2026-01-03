@@ -25,19 +25,13 @@ const MeetingCard: React.FC<MeetingCardProps> = ({ project }) => {
     },
     multiple: false,
     noClick: true,
-    maxSize: 100 * 1024 * 1024, // 100MB max
+    maxSize: 100 * 1024 * 1024,
     onDrop: async (acceptedFiles) => {
       const file = acceptedFiles[0]
       if (!file) {
         toast.error('No file selected')
         return
       }
-
-      console.log('📁 File selected:', {
-        name: file.name,
-        size: file.size,
-        type: file.type,
-      })
 
       setUploading(true)
       const uploadToast = toast.loading('Uploading audio file...')
@@ -47,32 +41,25 @@ const MeetingCard: React.FC<MeetingCardProps> = ({ project }) => {
         formData.append('file', file)
         formData.append('projectId', project.id)
 
-        console.log('📤 Uploading to /api/audio-upload...')
-
         const response = await fetch('/api/audio-upload', {
           method: 'POST',
           body: formData,
         })
 
         const data = await response.json()
-        console.log('📥 Upload response:', data)
 
         if (!response.ok) {
           throw new Error(data.error || 'Upload failed')
         }
 
-        toast.success(data.message || 'Upload successful! Processing...', {
+        toast.success(data.message || 'Upload successful!', {
           id: uploadToast,
         })
 
-        console.log('✅ Upload successful, navigating to meeting:', data.meeting.id)
-
-        // Navigate to the meeting page
         setTimeout(() => {
           router.push(`/meeting/${data.meeting.id}`)
         }, 500)
       } catch (error) {
-        console.error('❌ Upload error:', error)
         toast.error(
           error instanceof Error ? error.message : 'Failed to upload audio',
           { id: uploadToast }
@@ -81,36 +68,27 @@ const MeetingCard: React.FC<MeetingCardProps> = ({ project }) => {
         setUploading(false)
       }
     },
-    onDropRejected: (rejectedFiles) => {
-      const rejection = rejectedFiles[0]
-      if (rejection?.errors[0]?.code === 'file-too-large') {
-        toast.error('File is too large. Maximum size is 100MB.')
-      } else if (rejection?.errors[0]?.code === 'file-invalid-type') {
-        toast.error('Invalid file type. Please upload audio or video files.')
-      } else {
-        toast.error('File rejected. Please try again.')
-      }
-    },
   })
 
   return (
-    <Card className="col-span-1 sm:col-span-2 p-6 sm:p-10">
+    <Card className="col-span-1 sm:col-span-2 p-5 sm:p-8">
       <div
         {...getRootProps()}
         className="flex flex-col items-center text-center"
       >
-        <Presentation className="h-8 w-8 sm:h-10 sm:w-10 animate-bounce" />
 
-        <h3 className="mt-2 text-base sm:text-lg font-semibold">
+        <Presentation className="h-6 w-6 sm:h-8 sm:w-8 text-muted-foreground" />
+
+        <h3 className="mt-2 text-sm sm:text-base font-semibold">
           Create a new meeting
         </h3>
 
-        <p className="mt-1 text-sm sm:text-base text-gray-500">
+        <p className="mt-1 text-xs sm:text-sm text-muted-foreground leading-relaxed">
           Analyse your meeting with Devsync.
-          <br /> Powered by AI.
+          <br />
+          Powered by AI.
         </p>
-
-        <div className="mt-6 w-full flex justify-center">
+        <div className="mt-5 w-full flex justify-center">
           <Button
             type="button"
             size="lg"
@@ -120,30 +98,25 @@ const MeetingCard: React.FC<MeetingCardProps> = ({ project }) => {
               w-full sm:w-auto
               cursor-pointer
               text-sm sm:text-base
-              font-semibold
-              transition-all duration-200
-              hover:bg-primary/90
+              font-medium
+              transition-all
               hover:scale-[1.03]
               active:scale-[0.97]
-              disabled:cursor-not-allowed
-              disabled:opacity-50
             "
           >
             {uploading ? (
               <>
-                <Loader2 className="mr-2 h-5 w-5 sm:h-6 sm:w-6 animate-spin" />
-                Uploading...
+                <Loader2 className="mr-2 h-4 w-4 sm:h-5 sm:w-5 animate-spin" />
+                Uploading…
               </>
             ) : (
               <>
-                <Upload className="mr-2 h-5 w-5 sm:h-6 sm:w-6" />
-                Upload Meeting
+                <Upload className="mr-2 h-4 w-4 sm:h-5 sm:w-5" />
+                Upload meeting
               </>
             )}
           </Button>
         </div>
-
-        {/* Hidden input */}
         <input {...getInputProps()} />
       </div>
     </Card>
@@ -151,4 +124,3 @@ const MeetingCard: React.FC<MeetingCardProps> = ({ project }) => {
 }
 
 export default MeetingCard
-

@@ -34,7 +34,6 @@ async function fetchDiff(githubUrl: string, hash: string) {
       ref: hash,
     });
 
-    // Combine file patches into a diff-like string
     const patches = data.files
       ?.map((f) => {
         if (!f.patch) return "";
@@ -49,7 +48,6 @@ async function fetchDiff(githubUrl: string, hash: string) {
     return "";
   }
 }
-
 
 /* ---------------- Get Commits ---------------- */
 export async function getCommitHashes(
@@ -84,7 +82,6 @@ async function getPendingCommits(
 
   const done = new Set(
     existing
-      // ✅ Any non-empty summary means completed
       .filter((c) => c.summary && c.summary.trim().length > 0)
       .map((c) => c.commitHash)
   );
@@ -115,7 +112,7 @@ export async function pollCommits(projectId: string) {
 
     const processed: { commitHash: string }[] = [];
 
-    // ✅ Process commits sequentially (still one at a time)
+    // Process commits sequentially
     for (const commit of pending) {
       console.log(`📝 Processing: ${commit.commitHash.slice(0, 7)}`);
 
@@ -161,6 +158,8 @@ export async function pollCommits(projectId: string) {
 
           console.log(`✅ Summary saved: ${commit.commitHash.slice(0, 7)}`);
           processed.push({ commitHash: commit.commitHash });
+
+          // Note: Credit deduction for commit analysis happens during indexing
         } catch (err: any) {
           console.error(`❌ Summary failed: ${err.message}`);
 

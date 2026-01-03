@@ -1,9 +1,12 @@
+// src/app/(protected)/dashboard/actions.ts
 'use server';
 
 import { createStreamableValue } from "@ai-sdk/rsc";
 import OpenAI from "openai";
 import { generateEmbedding } from "@/lib/ai-service";
 import { db } from "@/server/db";
+import { auth } from "@clerk/nextjs/server";
+import { consumeCredits } from "@/lib/credit-service";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY!,
@@ -41,6 +44,32 @@ export async function askQuestion(question: string, projectId: string) {
   console.log("❓ Question:", question);
   console.log("🧭 Question type:", questionType);
 
+  // ✅ Get authenticated user
+  const { userId } = await auth();
+  if (!userId) {
+    stream.update("Error: You must be logged in.");
+    stream.done();
+    return { output: stream.value, filesReferences: [] };
+  }
+
+  // ✅ Consume credits BEFORE processing
+  try {
+    await consumeCredits(
+      userId,
+      "QUESTION_ASKED",
+      projectId,
+      `Asked: ${question.slice(0, 50)}...`
+    );
+    console.log("✅ Credits consumed successfully");
+  } catch (error: any) {
+    console.error("❌ Credit deduction failed:", error.message);
+    stream.update(
+      "⚠️ Insufficient credits. Please purchase more credits to continue using AI features."
+    );
+    stream.done();
+    return { output: stream.value, filesReferences: [] };
+  }
+
   /* ---------------- META QUESTIONS ---------------- */
   if (questionType === "META_PROJECT_NAME") {
     const project = await db.project.findUnique({
@@ -51,7 +80,7 @@ export async function askQuestion(question: string, projectId: string) {
     stream.update(
       project
         ? `The project is called **${project.name}**.`
-        : "I couldn’t find the project name."
+        : "I couldn't find the project name."
     );
     stream.done();
 
@@ -64,7 +93,7 @@ export async function askQuestion(question: string, projectId: string) {
   /* ---------------- ARCHITECTURE QUESTIONS ---------------- */
   if (questionType === "ARCHITECTURE") {
     stream.update(
-      "I’ll look through the codebase to see if this is explicitly defined.\n\n"
+      "I'll look through the codebase to see if this is explicitly defined.\n\n"
     );
   }
 
@@ -101,7 +130,7 @@ export async function askQuestion(question: string, projectId: string) {
 
     if (result.length === 0) {
       stream.update(
-        "I couldn’t find relevant code files for this question.\n\n" +
+        "I couldn't find relevant code files for this question.\n\n" +
         "This likely means the information is not implemented in the codebase, " +
         "or it exists only as a product or configuration detail."
       );
