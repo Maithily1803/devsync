@@ -79,6 +79,7 @@ const CommitLog = () => {
               <time
                 dateTime={commit.commitDate.toString()}
                 className="text-xs text-gray-500"
+                suppressHydrationWarning
               >
                 {new Date(commit.commitDate).toLocaleString()}
               </time>
