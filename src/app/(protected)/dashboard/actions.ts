@@ -1,12 +1,11 @@
 // src/app/(protected)/dashboard/actions.ts
-'use server';
+'use server'
 
-import { createStreamableValue } from "@ai-sdk/rsc";
-import OpenAI from "openai";
-import { generateEmbedding } from "@/lib/ai-service";
-import { db } from "@/server/db";
-import { auth } from "@clerk/nextjs/server";
-import { consumeCredits } from "@/lib/credit-service";
+import OpenAI from "openai"
+import { generateEmbedding } from "@/lib/ai-service"
+import { db } from "@/server/db"
+import { auth } from "@clerk/nextjs/server"
+import { consumeCredits } from "@/lib/credit-service"
 
 const openai = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY!,
@@ -14,16 +13,13 @@ const openai = new OpenAI({
   defaultHeaders: {
     "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
   },
-});
+})
 
 function classifyQuestion(question: string) {
-  const q = question.toLowerCase();
+  const q = question.toLowerCase()
 
-  if (
-    q.includes("project name") ||
-    q.includes("name of this project")
-  ) {
-    return "META_PROJECT_NAME";
+  if (q.includes("project name") || q.includes("name of this project")) {
+    return "META_PROJECT_NAME"
   }
 
   if (
@@ -31,43 +27,54 @@ function classifyQuestion(question: string) {
     q.includes("which ai") ||
     q.includes("which model")
   ) {
-    return "ARCHITECTURE";
+    return "ARCHITECTURE"
   }
 
-  return "CODE";
+  return "CODE"
 }
 
-export async function askQuestion(question: string, projectId: string) {
-  const stream = createStreamableValue<string>();
-  const questionType = classifyQuestion(question);
+export async function askQuestion(
+  question: string,
+  projectId: string
+): Promise<{
+  answer: string
+  filesReferences: {
+    fileName: string
+    sourceCode: string
+    summary: string
+    similarity: number
+  }[]
+}> {
+  const questionType = classifyQuestion(question)
+  let answer = ""
 
-  console.log("❓ Question:", question);
-  console.log("🧭 Question type:", questionType);
+  console.log("❓ Question:", question)
+  console.log("🧭 Question type:", questionType)
 
-  // ✅ Get authenticated user
-  const { userId } = await auth();
+  /* ---------------- AUTH ---------------- */
+  const { userId } = await auth()
   if (!userId) {
-    stream.update("Error: You must be logged in.");
-    stream.done();
-    return { output: stream.value, filesReferences: [] };
+    return {
+      answer: "Error: You must be logged in.",
+      filesReferences: [],
+    }
   }
 
-  // ✅ Consume credits BEFORE processing
+  /* ---------------- CREDITS ---------------- */
   try {
     await consumeCredits(
       userId,
       "QUESTION_ASKED",
       projectId,
       `Asked: ${question.slice(0, 50)}...`
-    );
-    console.log("✅ Credits consumed successfully");
-  } catch (error: any) {
-    console.error("❌ Credit deduction failed:", error.message);
-    stream.update(
-      "⚠️ Insufficient credits. Please purchase more credits to continue using AI features."
-    );
-    stream.done();
-    return { output: stream.value, filesReferences: [] };
+    )
+    console.log("✅ Credits consumed successfully")
+  } catch {
+    return {
+      answer:
+        "⚠️ Insufficient credits. Please purchase more credits to continue using AI features.",
+      filesReferences: [],
+    }
   }
 
   /* ---------------- META QUESTIONS ---------------- */
@@ -75,48 +82,36 @@ export async function askQuestion(question: string, projectId: string) {
     const project = await db.project.findUnique({
       where: { id: projectId },
       select: { name: true },
-    });
-
-    stream.update(
-      project
-        ? `The project is called **${project.name}**.`
-        : "I couldn't find the project name."
-    );
-    stream.done();
+    })
 
     return {
-      output: stream.value,
+      answer: project
+        ? `The project is called **${project.name}**.`
+        : "I couldn't find the project name.",
       filesReferences: [],
-    };
+    }
   }
 
-  /* ---------------- ARCHITECTURE QUESTIONS ---------------- */
-  if (questionType === "ARCHITECTURE") {
-    stream.update(
-      "I'll look through the codebase to see if this is explicitly defined.\n\n"
-    );
-  }
-
-  /* ---------------- CODE QUESTIONS ---------------- */
+  /* ---------------- CODE SEARCH ---------------- */
   let result: {
-    fileName: string;
-    sourceCode: string;
-    summary: string;
-    similarity: number;
-  }[] = [];
+    fileName: string
+    sourceCode: string
+    summary: string
+    similarity: number
+  }[] = []
 
   try {
-    console.log("🔍 Generating embedding...");
-    const queryVector = await generateEmbedding(question);
+    console.log("🔍 Generating embedding...")
+    const queryVector = await generateEmbedding(question)
 
     if (!queryVector || queryVector.length === 0) {
-      throw new Error("Failed to generate embedding");
+      throw new Error("Failed to generate embedding")
     }
 
-    const vectorQuery = `[${queryVector.join(",")}]`;
+    const vectorQuery = `[${queryVector.join(",")}]`
 
-    console.log("📊 Searching codebase...");
-    result = await db.$queryRaw`
+    console.log("📊 Searching codebase...")
+    result = (await db.$queryRaw`
       SELECT "fileName", "sourceCode", "summary",
         1 - ("summaryEmbedding" <=> ${vectorQuery}::vector) AS similarity
       FROM "SourceCodeEmbedding"
@@ -124,31 +119,27 @@ export async function askQuestion(question: string, projectId: string) {
         AND "projectId" = ${projectId}
       ORDER BY similarity DESC
       LIMIT 10
-    ` as any;
+    `) as any
 
-    console.log(`✅ Found ${result.length} relevant files`);
+    console.log(`✅ Found ${result.length} relevant files`)
 
     if (result.length === 0) {
-      stream.update(
-        "I couldn't find relevant code files for this question.\n\n" +
-        "This likely means the information is not implemented in the codebase, " +
-        "or it exists only as a product or configuration detail."
-      );
-      stream.done();
-
       return {
-        output: stream.value,
+        answer:
+          "I couldn't find relevant code files for this question.\n\n" +
+          "This likely means the information is not implemented in the codebase, " +
+          "or it exists only as a product or configuration detail.",
         filesReferences: [],
-      };
+      }
     }
 
     /* ---------------- BUILD CONTEXT ---------------- */
-    let context = "";
+    let context = ""
     for (const doc of result) {
       const code =
         doc.sourceCode.length > 3000
           ? doc.sourceCode.slice(0, 3000) + "\n[...truncated]"
-          : doc.sourceCode;
+          : doc.sourceCode
 
       context += `
 ═══════════════════════════════════
@@ -157,18 +148,16 @@ SUMMARY: ${doc.summary}
 CODE:
 ${code}
 ═══════════════════════════════════
-`;
+`
     }
 
-    /* ---------------- STREAM RESPONSE ---------------- */
-    (async () => {
-      try {
-        const completion = await openai.chat.completions.create({
-          model: "openai/gpt-4o-mini",
-          messages: [
-            {
-              role: "system",
-              content: `You are a senior software engineer reviewing a codebase.
+    /* ---------------- AI COMPLETION ---------------- */
+    const completion = await openai.chat.completions.create({
+      model: "openai/gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: `You are a senior software engineer reviewing a codebase.
 
 Rules:
 - Answer ONLY using the provided code context
@@ -176,38 +165,25 @@ Rules:
 - Be precise and technical
 - If the answer is not present, say so clearly
 - Use markdown for code blocks`,
-            },
-            {
-              role: "user",
-              content: `CODEBASE:\n${context}\n\nQUESTION:\n${question}`,
-            },
-          ],
-          stream: true,
-          temperature: 0.2,
-          max_tokens: 1000,
-        });
+        },
+        {
+          role: "user",
+          content: `CODEBASE:\n${context}\n\nQUESTION:\n${question}`,
+        },
+      ],
+      temperature: 0.2,
+      max_tokens: 1000,
+    })
 
-        for await (const chunk of completion) {
-          const delta = chunk.choices?.[0]?.delta?.content;
-          if (delta) stream.update(delta);
-        }
-
-        stream.done();
-      } catch (err: any) {
-        console.error("❌ Streaming error:", err.message);
-        stream.update("\n\n**Error:** " + err.message);
-        stream.done();
-      }
-    })();
+    answer = completion.choices[0]?.message?.content ?? ""
 
   } catch (err: any) {
-    console.error("❌ Question error:", err.message);
-    stream.update("\n\n**Error:** " + err.message);
-    stream.done();
+    console.error("❌ Question error:", err.message)
+    answer = `**Error:** ${err.message}`
   }
 
   return {
-    output: stream.value,
+    answer,
     filesReferences: result,
-  };
+  }
 }

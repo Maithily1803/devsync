@@ -13,7 +13,6 @@ import useProject from '@/hooks/use-project'
 import React from 'react'
 import Image from 'next/image'
 import { askQuestion } from './actions'
-import { readStreamableValue } from '@ai-sdk/rsc'
 import MDEditor from '@uiw/react-md-editor'
 import CodeReferences from './code-references'
 import { api } from '@/trpc/react'
@@ -43,27 +42,21 @@ const AskQuestionCard = () => {
     setFilesReferences([])
 
     try {
-      const { output, filesReferences } = await askQuestion(
+      const { answer, filesReferences } = await askQuestion(
         question,
         project.id
       )
+
       setOpen(true)
+      setAnswer(answer)
       setFilesReferences(filesReferences)
 
-      let fullAnswer = ''
-      for await (const delta of readStreamableValue(output)) {
-        if (delta) {
-          fullAnswer += delta
-          setAnswer(fullAnswer)
-        }
-      }
-
-      if (fullAnswer) {
+      if (answer) {
         saveAnswer.mutate(
           {
             projectId: project.id,
             question,
-            answer: fullAnswer,
+            answer,
             filesReferences,
           },
           {
@@ -86,7 +79,7 @@ const AskQuestionCard = () => {
 
   return (
     <>
-     
+      {/* Answer dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
           className="
@@ -109,6 +102,7 @@ const AskQuestionCard = () => {
               </DialogTitle>
             </div>
           </DialogHeader>
+
           <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-5">
             <div className="space-y-2">
               <h3 className="text-sm sm:text-base font-semibold text-muted-foreground">
@@ -126,7 +120,7 @@ const AskQuestionCard = () => {
                     p-4 m-0
                   "
                 />
-              </div>  
+              </div>
             </div>
 
             {filesReferences.length > 0 && (
@@ -155,7 +149,7 @@ const AskQuestionCard = () => {
         </DialogContent>
       </Dialog>
 
-      
+      {/* Ask question card */}
       <Card className="col-span-1 sm:col-span-3">
         <CardHeader>
           <CardTitle className="text-base sm:text-lg font-semibold">
@@ -182,8 +176,8 @@ const AskQuestionCard = () => {
               type="submit"
               size="lg"
               className="w-full text-sm sm:text-base cursor-pointer"
+              disabled={loading}
             >
-
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
