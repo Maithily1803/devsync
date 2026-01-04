@@ -28,6 +28,7 @@ const MainContent = ({ children }: { children: React.ReactNode }) => {
     <main
       className="
         flex-1
+        min-w-0
         flex flex-col
         px-2 sm:px-0
         overflow-hidden

@@ -123,6 +123,7 @@ const AskQuestionCard = () => {
                     prose prose-sm sm:prose
                     max-w-none
                     leading-relaxed
+                    p-4 m-0
                   "
                 />
               </div>  

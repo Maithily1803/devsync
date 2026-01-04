@@ -1,8 +1,9 @@
+// src/app/sync-user/page.tsx
 import { db } from '@/server/db'
-
 import { auth, clerkClient} from '@clerk/nextjs/server'
 import { notFound, redirect } from 'next/navigation'
 
+const FREE_CREDITS_FOR_NEW_USERS = 100; // ✅ Free credits for new signups
 
 const SyncUser = async () => {
     const {userId} = await auth()
@@ -23,6 +24,7 @@ const SyncUser = async () => {
             imageUrl: user.imageUrl,
             firstName: user.firstName,
             lastName: user.lastName,
+            // ✅ Don't update credits for existing users
         },
         create: {
             id: userId,
@@ -30,6 +32,7 @@ const SyncUser = async () => {
             imageUrl: user.imageUrl,
             firstName: user.firstName,
             lastName: user.lastName,
+            credits: FREE_CREDITS_FOR_NEW_USERS, // ✅ New users get 100 free credits
         },
     })
     return redirect('/dashboard')

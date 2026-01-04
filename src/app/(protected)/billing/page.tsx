@@ -1,3 +1,4 @@
+// src/app/(protected)/billing/page.tsx
 "use client";
 
 import Script from "next/script";
@@ -11,8 +12,6 @@ import {
   Zap,
   Check,
   CreditCard,
-  TrendingUp,
-  Clock,
   Loader2,
   Sparkles,
 } from "lucide-react";
@@ -36,8 +35,6 @@ export default function BillingPage() {
   const [stats, setStats] = useState<CreditStats | null>(null);
   const [history, setHistory] = useState<UsageItem[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // ✅ per-plan purchasing state
   const [purchasingPlanId, setPurchasingPlanId] = useState<string | null>(null);
 
   const fetchCredits = async () => {
@@ -55,7 +52,6 @@ export default function BillingPage() {
     }
   };
 
-  // 🔁 auto refresh
   useEffect(() => {
     fetchCredits();
     const interval = setInterval(fetchCredits, 30000);
@@ -128,10 +124,9 @@ export default function BillingPage() {
 
   const getActionLabel = (action: string) => {
     const map: Record<string, string> = {
+      PROJECT_CREATED: "Project Created",
       QUESTION_ASKED: "Q&A Session",
-      MEETING_ISSUES_GENERATED: "Issues Generated",
-      EMBEDDING_GENERATED: "Code Embedding",
-      COMMIT_ANALYSIS: "Commit Analysis",
+      MEETING_ISSUES_GENERATED: "Meeting Issues Generated",
     };
     return map[action] || action;
   };
@@ -156,11 +151,9 @@ export default function BillingPage() {
             Credits
           </h1>
           <p className="text-sm text-muted-foreground">
-            Credits are used for AI-powered analysis, issues, and Q&A
+            Credits are used for AI-powered features.
           </p>
         </div>
-
-
 
         {/* Stats */}
         <div className="grid gap-4 md:grid-cols-3">
@@ -202,18 +195,15 @@ export default function BillingPage() {
           </Card>
         </div>
 
-        {/* Credit Usage Info */}
-<div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-muted-foreground border rounded-md px-3 py-2">
-  <span className="font-medium text-foreground">Credit usage:</span>
+        {/* credit usage */}
+        <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-muted-foreground border rounded-md px-3 py-2">
+          <span className="font-medium text-foreground">Credit costs - </span>
+          <span><Badge variant="default" className="bg-amber-300">New Project: 50</Badge></span>
+          <span><Badge variant="default" className="bg-amber-300">Q&A: 5</Badge></span>
+          <span><Badge variant="default" className="bg-amber-300">Meeting Issues: 20</Badge></span>
+        </div>
 
-  <span>Issues- <Badge variant="outline">25</Badge></span>
-  <span>Q&A- <Badge variant="outline">10</Badge></span>
- 
-</div>
-
-
-
-        {/* Plans */}
+        {/* plans */}
         <div>
           <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-primary" />
@@ -282,7 +272,7 @@ export default function BillingPage() {
           </div>
         </div>
 
-
+        {/* recent activity */}
         {history.length > 0 && (
           <Card>
             <CardHeader>
@@ -301,6 +291,11 @@ export default function BillingPage() {
                     <p className="text-xs text-muted-foreground">
                       {new Date(item.createdAt).toLocaleString()}
                     </p>
+                    {item.description && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {item.description}
+                      </p>
+                    )}
                   </div>
                   <Badge variant="secondary">-{item.credits}</Badge>
                 </div>
@@ -312,5 +307,3 @@ export default function BillingPage() {
     </>
   );
 }
-
-

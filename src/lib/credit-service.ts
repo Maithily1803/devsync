@@ -1,4 +1,3 @@
-// src/lib/credit-service.ts
 import { db } from "@/server/db";
 import { CREDIT_COSTS, type CreditAction } from "./credit-plans";
 
@@ -34,7 +33,7 @@ export async function consumeCredits(
     throw new InsufficientCreditsError(cost, user?.credits || 0);
   }
 
-  // Atomic transaction
+  // ✅ Atomic transaction
   const [updatedUser] = await db.$transaction([
     db.user.update({
       where: { id: userId },
@@ -57,12 +56,24 @@ export async function consumeCredits(
   };
 }
 
+/**
+ * ✅ Recent credit activity
+ * - Only last 24 hours
+ * - Max 15 entries (default)
+ */
 export async function getCreditUsageHistory(
   userId: string,
-  limit = 50
+  limit = 15
 ) {
-  return await db.creditUsage.findMany({
-    where: { userId },
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+  return db.creditUsage.findMany({
+    where: {
+      userId,
+      createdAt: {
+        gte: oneDayAgo,
+      },
+    },
     orderBy: { createdAt: "desc" },
     take: limit,
     include: {

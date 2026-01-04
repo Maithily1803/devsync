@@ -4,7 +4,6 @@ import { db } from "@/server/db";
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { startTranscription } from "@/lib/start-transcription";
-import { consumeCredits } from "@/lib/credit-service";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -36,7 +35,6 @@ export async function POST(req: Request) {
       );
     }
 
-    
     const project = await db.project.findUnique({
       where: { id: projectId },
     });
@@ -90,7 +88,7 @@ export async function POST(req: Request) {
 
     console.log("✅ Meeting created:", meeting.id);
 
-    // 🚀 START TRANSCRIPTION
+    // 🚀 START TRANSCRIPTION (webhook will handle credit deduction when issues are generated)
     await startTranscription(audioUrl, meeting.id);
 
     return NextResponse.json(
