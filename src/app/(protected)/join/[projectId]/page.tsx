@@ -4,7 +4,7 @@ import { auth, clerkClient } from '@clerk/nextjs/server'
 import { db } from '@/server/db'
 import { redirect } from 'next/navigation'
 
-const FREE_CREDITS_FOR_NEW_USERS = 100; // ✅ Free credits for new signups
+const FREE_CREDITS_FOR_NEW_USERS = 100; 
 
 type Props = {
     params: Promise<{ projectId: string}>
@@ -32,7 +32,7 @@ const JoinHandler = async (props: Props) => {
                 imageUrl: user.imageUrl,
                 firstName: user.firstName,
                 lastName: user.lastName,
-                credits: FREE_CREDITS_FOR_NEW_USERS, // ✅ New users get 100 free credits
+                credits: FREE_CREDITS_FOR_NEW_USERS,
             }
         })
     }

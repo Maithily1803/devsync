@@ -1,11 +1,11 @@
-// src/lib/github-loader.ts
 import { GithubRepoLoader } from "@langchain/community/document_loaders/web/github";
 import { Document } from "@langchain/core/documents";
-import { generateEmbedding, summariseCode } from "./ai-service";
+import { generateEmbedding } from "@/lib/embeddings";
+import { summariseCode } from "@/lib/ai-service";
 import { db } from "@/server/db";
 import pLimit from "p-limit";
 
-/* ---------------- Normalize GitHub URL ---------------- */
+//url normalise url
 function normalizeGithubUrl(url: string): string {
   let normalized = url.replace(/\.git$/i, "");
 
@@ -22,206 +22,135 @@ function normalizeGithubUrl(url: string): string {
   return normalized;
 }
 
-/* ---------------- Load GitHub Repo ---------------- */
-export const loadGithubRepo = async (
+//loading repo
+export async function loadGithubRepo(
   githubUrl: string
-): Promise<Document[]> => {
-  console.log("📥 Loading GitHub repository:", githubUrl);
+): Promise<Document[]> {
+  const cleanUrl = normalizeGithubUrl(githubUrl);
 
-  try {
-    const cleanUrl = normalizeGithubUrl(githubUrl);
-    console.log("🔗 Normalized URL:", cleanUrl);
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) throw new Error("GITHUB_TOKEN not set");
 
-    const url = new URL(cleanUrl);
-    const [, owner, repo] = url.pathname.split("/");
+  const loader = new GithubRepoLoader(cleanUrl, {
+    accessToken: token,
+    branch: "main",
+    recursive: true,
+    maxConcurrency: 2,
+    unknown: "warn",
+    ignoreFiles: [
+      "node_modules",
+      ".next",
+      "dist",
+      "build",
+      "*.lock",
+      "*.png",
+      "*.jpg",
+      "*.svg",
+      "*.json",
+    ],
+  });
 
-    if (!owner || !repo) {
-      throw new Error("Invalid GitHub URL. Use: https://github.com/owner/repo");
-    }
+  const docs = await loader.load();
 
-    console.log(`👤 Owner: ${owner}, 📦 Repo: ${repo}`);
+  return docs.filter((doc) => {
+    const path = String(doc.metadata?.source ?? "").toLowerCase();
+    return /\.(ts|tsx|js|jsx|md|css|html)$/i.test(path);
+  });
+}
 
-    const token = process.env.GITHUB_TOKEN;
-    if (!token) {
-      throw new Error("GITHUB_TOKEN not set in .env");
-    }
+//embedding
 
-    const loader = new GithubRepoLoader(cleanUrl, {
-      accessToken: token,
-      branch: "main",
-      recursive: true,
-      ignoreFiles: [
-        "package-lock.json",
-        "yarn.lock",
-        "pnpm-lock.yaml",
-        "bun.lockb",
-        "*.min.js",
-        "*.map",
-        "*.csv",
-        "*.json",
-        "*.png",
-        "*.jpg",
-        "*.gif",
-        "*.svg",
-        "*.ico",
-        "*.woff*",
-        "*.ttf",
-        "*.eot",
-      ],
-      unknown: "warn",
-      maxConcurrency: 2,
-    });
-
-    const docs = await loader.load();
-    console.log(`✅ Loaded ${docs.length} files`);
-
-    const filtered = docs.filter((doc) => {
-      const path = doc.metadata.source.toLowerCase();
-      return (
-        /\.(ts|tsx|js|jsx|mdx|html|css|md)$/i.test(path) &&
-        !path.includes("node_modules") &&
-        !path.includes(".next") &&
-        !path.includes("dist") &&
-        !path.includes("build") &&
-        !path.includes(".git")
-      );
-    });
-
-    console.log(`✅ Filtered to ${filtered.length} code files`);
-
-    if (filtered.length === 0) {
-      console.warn("⚠️ No code files found");
-    }
-
-    return filtered;
-  } catch (error: any) {
-    console.error("❌ GitHub loading error:", error.message);
-    throw error;
-  }
+type PreparedEmbedding = {
+  fileName: string;
+  sourceCode: string;
+  summary: string;
+  embedding: number[];
 };
 
-/* ---------------- Generate Embeddings ---------------- */
-const generateEmbeddings = async (docs: Document[]) => {
-  console.log(`🤖 Generating embeddings for ${docs.length} files...`);
-
+async function generateEmbeddings(
+  docs: Document[],
+  projectId: string
+): Promise<PreparedEmbedding[]> {
   const limit = pLimit(1);
-  let successCount = 0;
-  let failCount = 0;
+  const results: PreparedEmbedding[] = [];
 
-  const results = await Promise.allSettled(
-    docs.map((doc, index) =>
-      limit(async () => {
-        try {
-          console.log(`[${index + 1}/${docs.length}] Processing: ${doc.metadata.source}`);
+  for (let i = 0; i < docs.length; i++) {
+    const doc = docs[i];
+    if (!doc) continue;
 
-          const summary = await summariseCode(doc);
+    await limit(async () => {
+      const fileName = String(doc.metadata?.source ?? "");
+      const sourceCode = String(doc.pageContent ?? "");
 
-          // ✅ Accept any non-empty summary
-          if (!summary || summary.length === 0) {
-            console.warn(`⚠️ Empty summary: ${doc.metadata.source}`);
-            return null;
-          }
+      // cache check
+      const existing = await db.sourceCodeEmbedding.findFirst({
+        where: { projectId, fileName, sourceCode },
+        select: { id: true, summary: true },
+      });
 
-          const embedding = await generateEmbedding(summary);
+      if (existing?.summary?.length) {
+        return;
+      }
 
-          // ✅ Reject invalid embeddings explicitly
-          if (!embedding || embedding.length !== 1536) {
-            console.warn(
-              `⚠️ Invalid embedding (${embedding.length}) for ${doc.metadata.source}`
-            );
-            return null;
-          }
+      const summary = await summariseCode(doc);
+      if (!summary) return;
 
-          successCount++;
-          console.log(`✅ [${successCount}/${docs.length}] ${doc.metadata.source}`);
+      const embedding = await generateEmbedding(summary);
+      if (embedding.length !== 384) return;
 
-          return {
-            summary,
-            embedding,
-            sourceCode: String(doc.pageContent),
-            fileName: doc.metadata.source,
-          };
-        } catch (error: any) {
-          failCount++;
-          console.error(
-            `❌ [${index + 1}/${docs.length}] ${doc.metadata.source}:`,
-            error.message
-          );
-          return null;
-        }
-      })
-    )
-  );
+      results.push({
+        fileName,
+        sourceCode,
+        summary,
+        embedding,
+      });
+    });
+  }
 
-  const embeddings = results
-    .map((r) => (r.status === "fulfilled" ? r.value : null))
-    .filter((item): item is NonNullable<typeof item> => item !== null);
+  return results;
+}
 
-  console.log(`📊 Results: ${successCount} success, ${failCount} failed`);
-  return embeddings;
-};
+//indexing repo
 
-/* ---------------- Index GitHub Repo ---------------- */
-export const indexGithubRepo = async (
+export async function indexGithubRepo(
   projectId: string,
   githubUrl: string
-) => {
-  console.log("🚀 Starting repository indexing...");
-  console.log(`📦 Project: ${projectId}`);
-  console.log(`🔗 GitHub: ${githubUrl}`);
+) {
+  const docs = await loadGithubRepo(githubUrl);
+  if (!docs.length) return;
 
-  try {
-    const docs = await loadGithubRepo(githubUrl);
+  const prepared = await generateEmbeddings(docs, projectId);
+  if (!prepared.length) return;
 
-    if (docs.length === 0) {
-      console.warn("⚠️ No files to index");
-      return;
-    }
+  for (const item of prepared) {
+    const record = await db.sourceCodeEmbedding.upsert({
+      where: {
+        projectId_fileName: {
+          projectId,
+          fileName: item.fileName,
+        },
+      },
+      update: {
+        summary: item.summary,
+        sourceCode: item.sourceCode,
+      },
+      create: {
+        projectId,
+        fileName: item.fileName,
+        sourceCode: item.sourceCode,
+        summary: item.summary,
+      },
+    });
 
-    const allEmbeddings = await generateEmbeddings(docs);
+    // vector must be written via raw SQL
+    const vector = `[${item.embedding.join(",")}]`;
 
-    if (allEmbeddings.length === 0) {
-      console.error("❌ No embeddings generated");
-      return;
-    }
-
-    const limit = pLimit(1);
-    let savedCount = 0;
-
-    console.log(`💾 Saving ${allEmbeddings.length} embeddings...`);
-
-    await Promise.allSettled(
-      allEmbeddings.map((embedding) =>
-        limit(async () => {
-          try {
-            const record = await db.sourceCodeEmbedding.create({
-              data: {
-                summary: embedding.summary,
-                sourceCode: embedding.sourceCode,
-                fileName: embedding.fileName,
-                projectId,
-              },
-            });
-
-            const vectorLiteral = `[${embedding.embedding.join(",")}]`;
-            await db.$executeRawUnsafe(
-              `UPDATE "SourceCodeEmbedding"
-               SET "summaryEmbedding" = '${vectorLiteral}'::vector
-               WHERE "id" = '${record.id}'`
-            );
-
-            savedCount++;
-            console.log(`💾 [${savedCount}/${allEmbeddings.length}] Saved: ${embedding.fileName}`);
-          } catch (error: any) {
-            console.error(`❌ Save failed: ${embedding.fileName}`, error.message);
-          }
-        })
-      )
-    );
-
-    console.log(`✅ Indexing complete! ${savedCount}/${allEmbeddings.length} files saved`);
-  } catch (error: any) {
-    console.error("❌ Indexing failed:", error.message);
-    throw error;
+    await db.$executeRawUnsafe(`
+      UPDATE "SourceCodeEmbedding"
+      SET "summaryEmbedding" = '${vector}'::vector
+      WHERE "id" = '${record.id}'
+    `);
   }
-};
+}
+
+

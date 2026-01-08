@@ -27,7 +27,7 @@ const CodeReferences = ({ filesReferences }: Props) => {
   return (
     <div className="w-full max-w-full text-sm sm:text-base">
       <Tabs value={tab} onValueChange={setTab}>
-        {/* ---------------- Tabs Header ---------------- */}
+        {/* tabs header */}
         <div
           className="
             flex gap-2
@@ -67,7 +67,7 @@ const CodeReferences = ({ filesReferences }: Props) => {
           ))}
         </div>
 
-        {/* ---------------- Code Viewer ---------------- */}
+        {/* code view */}
         {filesReferences.map((file) => (
           <TabsContent
             key={file.fileName}
@@ -88,7 +88,7 @@ const CodeReferences = ({ filesReferences }: Props) => {
               sm:overflow-auto
             "
           >
-            {/* Copy Button */}
+            {/* copy Button */}
             <button
               onClick={() => handleCopy(file.sourceCode, file.fileName)}
               className="
@@ -124,7 +124,7 @@ const CodeReferences = ({ filesReferences }: Props) => {
               customStyle={{
                 margin: 0,
                 background: 'transparent',
-                boxSizing: 'border-box', // ✅ KEY FIX
+                boxSizing: 'border-box', 
                 width: '100%',
                 fontSize: '0.85rem',
               }}

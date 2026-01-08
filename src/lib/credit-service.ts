@@ -33,7 +33,6 @@ export async function consumeCredits(
     throw new InsufficientCreditsError(cost, user?.credits || 0);
   }
 
-  // ✅ Atomic transaction
   const [updatedUser] = await db.$transaction([
     db.user.update({
       where: { id: userId },
@@ -56,11 +55,6 @@ export async function consumeCredits(
   };
 }
 
-/**
- * ✅ Recent credit activity
- * - Only last 24 hours
- * - Max 15 entries (default)
- */
 export async function getCreditUsageHistory(
   userId: string,
   limit = 15

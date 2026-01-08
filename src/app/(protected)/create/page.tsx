@@ -1,3 +1,4 @@
+// src/app/(protected)/create/page.tsx
 'use client'
 
 import { Button } from '@/components/ui/button'
@@ -9,6 +10,8 @@ import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Info, Loader2 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import useProject from '@/hooks/use-project'
 
 type FormInput = {
   repoUrl: string
@@ -19,6 +22,8 @@ const CreatePage = () => {
   const { register, handleSubmit, reset } = useForm<FormInput>()
   const createProject = api.project.createProject.useMutation()
   const refetch = useRefetch()
+  const router = useRouter()
+  const { setProjectId } = useProject()
 
   function onSubmit(data: FormInput) {
     createProject.mutate(
@@ -27,16 +32,24 @@ const CreatePage = () => {
         name: data.projectName,
       },
       {
-        onSuccess: () => {
-          toast.success('🎉 Project created! Indexing in background')
+        onSuccess: (project) => {
+          toast.success('Project created!')
           refetch()
           reset()
+          
+          //new project as active
+          setProjectId(project.id)
+          
+          //redirect to dashboard with the new project
+          router.push('/dashboard')
         },
         onError: (error: any) => {
           if (error.message.includes('404')) {
             toast.error('Repository not found')
           } else if (error.message.includes('401') || error.message.includes('403')) {
             toast.error('GitHub authentication failed')
+          } else if (error.message.includes('Insufficient credits')) {
+            toast.error('Insufficient credits. Please purchase more credits.')
           } else {
             toast.error(error.message || 'Failed to create project')
           }
@@ -48,7 +61,7 @@ const CreatePage = () => {
   return (
     <div className="flex min-h-full items-center justify-center px-4 py-8">
       <div className="flex w-full max-w-4xl flex-col-reverse items-center gap-8 lg:flex-row lg:gap-12">
-        {/* img */}
+        
         <img
           src="/undraw_github.svg"
           alt="GitHub"
@@ -64,7 +77,6 @@ const CreatePage = () => {
               Connect a public repo to start analyzing
             </p>
           </div>
-
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div>
@@ -116,8 +128,6 @@ const CreatePage = () => {
             </Alert>
           )}
         </div>
-
-        
       </div>
     </div>
   )

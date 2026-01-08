@@ -43,7 +43,7 @@ const IssueDialog = ({ issue, open, onOpenChange }: Props) => {
         </DialogHeader>
 
         <div className="space-y-6">
-          {/* Metadata */}
+
           <div className="flex flex-wrap items-center gap-3">
             <Badge
               className={`${priorityColors[issue.priority]} capitalize`}
@@ -72,7 +72,6 @@ const IssueDialog = ({ issue, open, onOpenChange }: Props) => {
             <p className="leading-7 text-sm">{issue.description}</p>
           </div>
 
-          {/* Assigned To */}
           {issue.assignedTo && (
             <div>
               <h3 className="mb-2 text-sm font-semibold">Assigned To</h3>

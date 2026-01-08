@@ -34,7 +34,7 @@ const MainContent = ({ children }: { children: React.ReactNode }) => {
         overflow-hidden
       "
     >
-      {/* ---------------- Top bar ---------------- */}
+      {/* top */}
       <div
         className="
           flex items-center gap-2
@@ -45,7 +45,7 @@ const MainContent = ({ children }: { children: React.ReactNode }) => {
           m-2
         "
       >
-        {/* Hamburger (mobile only) */}
+        {/* hamburger */}
         <button
           onClick={toggleSidebar}
           className="
@@ -72,7 +72,7 @@ const MainContent = ({ children }: { children: React.ReactNode }) => {
         </div>
       </div>
 
-      {/* ---------------- Page content ---------------- */}
+      {/* page */}
       <div
         className="
           flex-1

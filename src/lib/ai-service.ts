@@ -1,158 +1,139 @@
-// src/lib/ai-service.ts
-import OpenAI from "openai";
-import type { Document } from "@langchain/core/documents";
+import Groq from "groq-sdk"
+import type { Document } from "@langchain/core/documents"
+import { retryWithBackoff } from "@/lib/retry-helper"
 
-export const openai = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY!,
-  baseURL: "https://openrouter.ai/api/v1",
-  defaultHeaders: {
-    "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
-    "X-Title": "Devsync",
-  },
-});
-
+export const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY!,
+})
 
 export const AI_MODELS = {
-  PRIMARY: "openai/gpt-4o-mini",            
-  FALLBACK: "openai/gpt-4o-mini-2024-07-18", // Backup
-  EMBEDDINGS: "openai/text-embedding-3-small",     
-} as const;
+  PRIMARY: "llama-3.1-8b-instant",
+} as const
 
-const MODEL_ORDER = [AI_MODELS.PRIMARY, AI_MODELS.FALLBACK] as const;
 
-//helper
-
-function truncateToTokens(text: string, maxTokens: number) {
-  const maxChars = maxTokens * 4;
-  return text.length > maxChars ? text.slice(0, maxChars) : text;
+function truncate(text: string, maxChars: number) {
+  if (!text) return ""
+  return text.length > maxChars ? text.slice(0, maxChars) : text
 }
 
-function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
-}
+//prompts
+const COMMIT_SYSTEM_PROMPT =
+  "Answer questions about git commits using ONLY the provided commit summaries. Mention commit hashes. If unknown, say: Not found in commit history."
 
-//commit summary 
+const CODE_SYSTEM_PROMPT =
+  "Summarize code behavior in 2–3 concise technical sentences."
 
+const CODE_QA_SYSTEM_PROMPT =
+  "Answer ONLY using the provided code context. " +
+  "If one or more files match, list their file paths as bullet points. " +
+  "Do NOT say 'not found' if any match exists. " +
+  "Say 'Not found in the codebase' ONLY if there are zero matches."
+
+//commit summary
 export async function aiSummariseCommit(diff: string): Promise<string> {
-  const truncatedDiff = truncateToTokens(diff, 8_000);
+  if (!diff || diff.length < 20) return "No significant changes."
 
-  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    {
-      role: "system",
-      content: `
-You are an expert programmer summarizing git diffs.
+  const truncatedDiff = truncate(diff, 3000)
 
-Rules:
-- Output AT MOST 5 bullet points bullet points using "*"
-- Focus only on WHAT changed (not why)
-- Mention file paths when relevant
-- No explanations, no generic filler text
-- No introductions or conclusions
-- If changes are trivial, summarize in 1 bullet only
-- If nothing meaningful changed, return an empty response
-      `.trim(),
-    },
-    {
-      role: "user",
-      content: `Summarize this git diff:\n\n${truncatedDiff}`,
-    },
-  ];
+  try {
+    const resp = await retryWithBackoff(() =>
+      groq.chat.completions.create({
+        model: AI_MODELS.PRIMARY,
+        messages: [
+          { role: "system", content: "Summarize git diff. Max 3 bullets. WHAT changed only." },
+          { role: "user", content: truncatedDiff },
+        ],
+        temperature: 0,
+        max_tokens: 100,
+      })
+    )
 
-  let lastError: unknown;
-
-  for (const model of MODEL_ORDER) {
-    try {
-      const resp = await openai.chat.completions.create({
-        model,
-        messages,
-        temperature: 0.1,
-        max_tokens: 180,
-      });
-
-      const text = resp.choices?.[0]?.message?.content?.trim() ?? "";
-
-      
-      if (text.length > 0) {
-        return text;
-      }
-    } catch (err: any) {
-      lastError = err;
-
-      
-      console.error(
-        "Commit summary AI error:",
-        err?.response?.data || err?.message || err
-      );
-
-      if (err?.status === 429) {
-        console.log("Rate limited, waiting 15s...");
-        await sleep(15_000);
-        continue;
-      }
-
-      break;
-    }
+    return resp.choices[0]?.message?.content?.trim() ?? "No significant changes."
+  } catch {
+    return "Summary unavailable due to rate limits."
   }
-
-  throw lastError ?? new Error("AI summary failed");
 }
 
-//code summary 
-
+//code summary
 export async function summariseCode(doc: Document): Promise<string> {
+  const code = truncate(String(doc.pageContent ?? ""), 2500)
+  if (code.length < 50) return "Minimal or non-functional code."
+
   try {
-    const code = truncateToTokens(String(doc.pageContent), 6_000);
+    const resp = await retryWithBackoff(() =>
+      groq.chat.completions.create({
+        model: AI_MODELS.PRIMARY,
+        messages: [
+          { role: "system", content: CODE_SYSTEM_PROMPT },
+          { role: "user", content: code },
+        ],
+        temperature: 0.2,
+        max_tokens: 120,
+      })
+    )
 
-    const resp = await openai.chat.completions.create({
-      model: AI_MODELS.PRIMARY,
-      messages: [
-        {
-          role: "system",
-          content: "Summarize this source code in 2–3 technical sentences.",
-        },
-        {
-          role: "user",
-          content: code,
-        },
-      ],
-      max_tokens: 200,
-    });
+    return resp.choices[0]?.message?.content?.trim() ?? "Summary unavailable."
+  } catch {
+    return "Summary unavailable due to rate limits."
+  }
+}
 
-    return resp.choices?.[0]?.message?.content?.trim() ?? "";
-  } catch (err: any) {
-    console.error(
-      `Code summary failed for ${doc.metadata.source}:`,
-      err?.response?.data || err?.message || err
-    );
-    return "";
+//qa
+export async function generateCodeQAResponse(
+  context: string,
+  question: string
+): Promise<string> {
+  if (!context || context.length < 50) {
+    return "Not found in the codebase."
+  }
+
+  try {
+    const resp = await retryWithBackoff(() =>
+      groq.chat.completions.create({
+        model: AI_MODELS.PRIMARY,
+        messages: [
+          { role: "system", content: CODE_QA_SYSTEM_PROMPT },
+          {
+            role: "user",
+            content: `CODE:\n${truncate(context, 6000)}\n\nQUESTION:\n${truncate(question, 300)}`,
+          },
+        ],
+        temperature: 0.2,
+        max_tokens: 400,
+      })
+    )
+
+    return resp.choices[0]?.message?.content?.trim() ?? "Not found in the codebase."
+  } catch {
+    return "Not found in the codebase."
+  }
+}
+
+//commit qa
+export async function generateCommitQAResponse(
+  context: string,
+  question: string
+): Promise<string> {
+  try {
+    const resp = await retryWithBackoff(() =>
+      groq.chat.completions.create({
+        model: AI_MODELS.PRIMARY,
+        messages: [
+          { role: "system", content: COMMIT_SYSTEM_PROMPT },
+          {
+            role: "user",
+            content: `COMMITS:\n${truncate(context, 6000)}\n\nQUESTION:\n${truncate(question, 300)}`,
+          },
+        ],
+        temperature: 0,
+        max_tokens: 200,
+      })
+    )
+
+    return resp.choices[0]?.message?.content?.trim() ?? "Not found in commit history."
+  } catch {
+    return "Not found in commit history."
   }
 }
 
 
-export async function generateEmbedding(text: string): Promise<number[]> {
-  if (!text || text.trim().length < 10) return [];
-
-  try {
-    const resp = await openai.embeddings.create({
-      model: AI_MODELS.EMBEDDINGS,
-      input: truncateToTokens(text, 6_000),
-    });
-
-    const embedding = resp.data?.[0]?.embedding ?? [];
-
-   
-    if (embedding.length > 0 && embedding.length !== 1536) {
-      console.warn(
-        `Unexpected embedding size: ${embedding.length} (expected 1536)`
-      );
-    }
-
-    return embedding;
-  } catch (err: any) {
-    console.error(
-      " Embedding generation failed:",
-      err?.response?.data || err?.message || err
-    );
-    return [];
-  }
-}

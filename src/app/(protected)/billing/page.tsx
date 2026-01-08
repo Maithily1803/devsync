@@ -31,11 +31,18 @@ type UsageItem = {
   project?: { name: string } | null;
 };
 
+declare global {
+  interface Window {
+    Razorpay: any;
+  }
+}
+
 export default function BillingPage() {
   const [stats, setStats] = useState<CreditStats | null>(null);
   const [history, setHistory] = useState<UsageItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [purchasingPlanId, setPurchasingPlanId] = useState<string | null>(null);
+  const [razorpayLoaded, setRazorpayLoaded] = useState(false);
 
   const fetchCredits = async () => {
     try {
@@ -45,7 +52,7 @@ export default function BillingPage() {
       setStats(data.stats ?? null);
       setHistory(Array.isArray(data.history) ? data.history : []);
     } catch (err) {
-      console.error(err);
+      console.error("Failed to fetch credits:", err);
       setHistory([]);
     } finally {
       setLoading(false);
@@ -59,19 +66,42 @@ export default function BillingPage() {
   }, []);
 
   const buyCredits = async (planId: string) => {
-    if (purchasingPlanId) return;
+    if (purchasingPlanId) {
+      console.log("⏳ Purchase already in progress");
+      return;
+    }
+
+    if (!razorpayLoaded) {
+      toast.error("Payment gateway loading, please wait...");
+      return;
+    }
+
+    if (!window.Razorpay) {
+      toast.error("Payment gateway not available. Please refresh the page.");
+      return;
+    }
 
     try {
+      console.log("🛒 Starting purchase for plan:", planId);
       setPurchasingPlanId(planId);
 
+      // Create order
+      console.log("📤 Creating order...");
       const res = await fetch("/api/billing/create-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ planId }),
       });
 
-      const { order, plan } = await res.json();
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to create order");
+      }
 
+      const { order, plan } = await res.json();
+      console.log("✅ Order created:", order.id);
+
+      // Configure Razorpay
       const options = {
         key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
         order_id: order.id,
@@ -82,51 +112,77 @@ export default function BillingPage() {
         image: "/logo.png",
 
         handler: async (response: any) => {
+          console.log("💳 Payment completed, verifying...");
+          
           try {
             const verifyRes = await fetch("/api/billing/verify", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(response),
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+              }),
             });
 
-            const data = await verifyRes.json();
+            const verifyData = await verifyRes.json();
+            console.log("📥 Verification response:", verifyData);
 
-            if (data.success) {
-              toast.success(`${data.credits} credits added!`);
-              fetchCredits();
-            } else {
-              toast.error("Payment verification failed");
+            if (!verifyRes.ok) {
+              throw new Error(verifyData.error || "Verification failed");
             }
-          } catch {
-            toast.error("Verification error");
+
+            if (verifyData.success) {
+              toast.success(`✅ ${verifyData.credits} credits added successfully!`);
+              
+              // Refresh credits
+              await fetchCredits();
+            } else {
+              toast.error(verifyData.error || "Payment verification failed");
+            }
+          } catch (error: any) {
+            console.error("❌ Verification error:", error);
+            toast.error(error.message || "Failed to verify payment");
           } finally {
             setPurchasingPlanId(null);
           }
         },
 
         modal: {
-          ondismiss: () => setPurchasingPlanId(null),
+          ondismiss: () => {
+            console.log("❌ Payment cancelled by user");
+            toast.info("Payment cancelled");
+            setPurchasingPlanId(null);
+          },
+        },
+
+        theme: {
+          color: "#3b82f6",
         },
       };
 
-      const rzp = new (window as any).Razorpay(options);
-      rzp.open();
-
-      rzp.on("payment.failed", () => {
-        toast.error("Payment failed");
+      console.log("🚀 Opening Razorpay checkout...");
+      const rzp = new window.Razorpay(options);
+      
+      rzp.on("payment.failed", (response: any) => {
+        console.error("❌ Payment failed:", response.error);
+        toast.error(`Payment failed: ${response.error.description}`);
         setPurchasingPlanId(null);
       });
-    } catch {
-      toast.error("Failed to initiate payment");
+
+      rzp.open();
+    } catch (error: any) {
+      console.error("❌ Purchase error:", error);
+      toast.error(error.message || "Failed to initiate payment");
       setPurchasingPlanId(null);
     }
   };
 
   const getActionLabel = (action: string) => {
     const map: Record<string, string> = {
-      PROJECT_CREATED: "Project Created",
+      NEW_PROJECT: "New Project",
       QUESTION_ASKED: "Q&A Session",
-      MEETING_ISSUES_GENERATED: "Meeting Issues Generated",
+      MEETING_ISSUES_GENERATED: "Meeting Issues",
     };
     return map[action] || action;
   };
@@ -141,7 +197,17 @@ export default function BillingPage() {
 
   return (
     <>
-      <Script src="https://checkout.razorpay.com/v1/checkout.js" />
+      <Script 
+        src="https://checkout.razorpay.com/v1/checkout.js"
+        onLoad={() => {
+          console.log("✅ Razorpay script loaded");
+          setRazorpayLoaded(true);
+        }}
+        onError={() => {
+          console.error("❌ Failed to load Razorpay script");
+          toast.error("Failed to load payment gateway");
+        }}
+      />
 
       <div className="max-w-6xl mx-auto px-3 sm:px-6 py-5 sm:py-8 space-y-6">
         {/* Header */}
@@ -195,7 +261,7 @@ export default function BillingPage() {
           </Card>
         </div>
 
-        {/* credit usage */}
+        {/* Credit usage costs */}
         <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-muted-foreground border rounded-md px-3 py-2">
           <span className="font-medium text-foreground">Credit costs - </span>
           <span><Badge variant="default" className="bg-amber-300">New Project: 50</Badge></span>
@@ -203,7 +269,7 @@ export default function BillingPage() {
           <span><Badge variant="default" className="bg-amber-300">Meeting Issues: 20</Badge></span>
         </div>
 
-        {/* plans */}
+        {/* Buy Credits Plans */}
         <div>
           <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-primary" />
@@ -252,12 +318,17 @@ export default function BillingPage() {
                     className="w-full cursor-pointer"
                     variant={plan.popular ? "default" : "outline"}
                     onClick={() => buyCredits(plan.id)}
-                    disabled={!!purchasingPlanId}
+                    disabled={!!purchasingPlanId || !razorpayLoaded}
                   >
                     {purchasingPlanId === plan.id ? (
                       <>
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                         Processing...
+                      </>
+                    ) : !razorpayLoaded ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Loading...
                       </>
                     ) : (
                       <>
@@ -272,7 +343,7 @@ export default function BillingPage() {
           </div>
         </div>
 
-        {/* recent activity */}
+        {/* Recent Activity */}
         {history.length > 0 && (
           <Card>
             <CardHeader>

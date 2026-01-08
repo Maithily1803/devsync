@@ -34,7 +34,7 @@ const MeetingCard: React.FC<MeetingCardProps> = ({ project }) => {
       }
 
       setUploading(true)
-      const uploadToast = toast.loading('Uploading audio file...')
+      const uploadToast = toast.loading('Uploading audio file')
 
       try {
         const formData = new FormData()

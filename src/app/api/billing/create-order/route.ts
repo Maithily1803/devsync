@@ -1,8 +1,14 @@
+// src/app/api/billing/create-order/route.ts
 import Razorpay from "razorpay";
 import { NextResponse } from "next/server";
 import { db } from "@/server/db";
 import { auth } from "@clerk/nextjs/server";
 import { CREDIT_PLANS } from "@/lib/credit-plans";
+
+// Validate Razorpay keys on startup
+if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+  throw new Error("Razorpay keys not configured");
+}
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID!,
@@ -11,30 +17,51 @@ const razorpay = new Razorpay({
 
 export async function POST(req: Request) {
   try {
+    console.log("🛒 Create order request started");
+
     const { userId } = await auth();
 
     if (!userId) {
+      console.error("❌ No userId found");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { planId } = await req.json();
+    console.log("👤 User ID:", userId);
+
+    const body = await req.json();
+    const { planId } = body;
+
+    console.log("📦 Plan ID:", planId);
+
+    // Find plan
     const plan = CREDIT_PLANS.find((p) => p.id === planId);
 
     if (!plan) {
+      console.error("❌ Invalid plan:", planId);
       return NextResponse.json({ error: "Invalid plan" }, { status: 400 });
     }
 
-   
-    await db.user.upsert({
+    console.log("✅ Plan found:", plan.name, "-", plan.credits, "credits");
+
+    // Ensure user exists
+    console.log("🔍 Checking user existence...");
+    const existingUser = await db.user.findUnique({
       where: { id: userId },
-      update: {},
-      create: {
-        id: userId,
-        emailAddress: "",
-      },
     });
 
-    // create razorpay order
+    if (!existingUser) {
+      console.log("📝 Creating user record...");
+      await db.user.create({
+        data: {
+          id: userId,
+          emailAddress: "",
+          credits: 0,
+        },
+      });
+    }
+
+    // Create Razorpay order
+    console.log("💳 Creating Razorpay order...");
     const order = await razorpay.orders.create({
       amount: plan.price * 100, // Convert to paise
       currency: "INR",
@@ -46,7 +73,10 @@ export async function POST(req: Request) {
       },
     });
 
-   
+    console.log("✅ Razorpay order created:", order.id);
+
+    // Save payment record
+    console.log("💾 Saving payment record...");
     await db.payment.create({
       data: {
         userId,
@@ -57,17 +87,28 @@ export async function POST(req: Request) {
       },
     });
 
-    return NextResponse.json({ 
-      order,
+    console.log("✅ Payment record saved");
+
+    return NextResponse.json({
+      order: {
+        id: order.id,
+        amount: order.amount,
+        currency: order.currency,
+      },
       plan: {
         name: plan.name,
         credits: plan.credits,
-      }
+      },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("❌ Create order error:", error);
+    console.error("Stack:", error.stack);
+    
     return NextResponse.json(
-      { error: "Failed to create order" },
+      { 
+        error: "Failed to create order",
+        details: error.message 
+      },
       { status: 500 }
     );
   }

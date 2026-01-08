@@ -1,5 +1,4 @@
 'use client'
-
 import {
   Sidebar,
   SidebarContent,
@@ -44,7 +43,6 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
-        {/* Application */}
         <SidebarGroup>
           <SidebarGroupLabel className="text-base font-semibold">
             Application
@@ -71,7 +69,6 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Projects */}
         <SidebarGroup>
           <SidebarGroupLabel className="text-base font-semibold">
             Your Projects

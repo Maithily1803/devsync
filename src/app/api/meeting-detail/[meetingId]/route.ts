@@ -39,17 +39,16 @@ export async function GET(
       );
     }
 
-    console.log("📋 Meeting detail request:", {
+    console.log("Meeting detail request:", {
       id: meeting.id,
       status: meeting.status,
       hasAssemblyId: !!meeting.assemblyaiId,
       hasIssues: !!meeting.issues
     });
 
-    // ✅ If still processing and has assemblyaiId, check status with AssemblyAI
     if (meeting.status === "processing" && meeting.assemblyaiId) {
       try {
-        console.log("🔍 Checking AssemblyAI status for:", meeting.assemblyaiId);
+        console.log("Checking AssemblyAI status for:", meeting.assemblyaiId);
         
         const asmRes = await fetch(
           `https://api.assemblyai.com/v2/transcript/${meeting.assemblyaiId}`,
@@ -63,11 +62,10 @@ export async function GET(
         if (asmRes.ok) {
           const asmData = await asmRes.json();
 
-          console.log("📊 AssemblyAI status:", asmData.status);
+          console.log("AssemblyAI status:", asmData.status);
 
-          // ✅ If completed but DB not updated (webhook failed/delayed), update now
           if (asmData.status === "completed" && asmData.text) {
-            console.log("✅ Transcript ready, generating issues...");
+            console.log("Transcript ready, generating issues...");
             
             let issues: any[] = [];
             
@@ -76,19 +74,18 @@ export async function GET(
                 asmData.text,
                 meeting.name
               );
-              console.log(`✅ Generated ${issues.length} issues`);
+              console.log(`Generated ${issues.length} issues`);
             } catch (err: any) {
               console.error("⚠️ Issue generation failed:", err.message);
             }
 
-            // ✅ Deduct credits for issue generation
             if (issues.length > 0) {
               const userId = meeting.project.UserToProjects[0]?.userId;
               
-              console.log("💳 Attempting to deduct credits...");
-              console.log("   User ID:", userId);
-              console.log("   Project ID:", meeting.projectId);
-              console.log("   Issues count:", issues.length);
+              console.log("Attempting to deduct credits...");
+              console.log("User ID:", userId);
+              console.log("Project ID:", meeting.projectId);
+              console.log("Issues count:", issues.length);
               
               if (userId) {
                 try {
@@ -98,19 +95,17 @@ export async function GET(
                     meeting.projectId,
                     `Generated ${issues.length} issues from: ${meeting.name.slice(0, 30)}...`
                   );
-                  console.log("✅ Credits deducted successfully!");
-                  console.log("   Remaining credits:", result.remaining);
+                  console.log("Credits deducted successfully!");
+                  console.log("Remaining credits:", result.remaining);
                 } catch (creditError: any) {
-                  console.error("❌ Credit deduction FAILED:", creditError.message);
-                  console.error("   Error name:", creditError.name);
-                  // Don't fail - issues were still generated
+                  console.error("Credit deduction FAILED:", creditError.message);
+                  console.error("Error name:", creditError.name);
                 }
               } else {
-                console.error("❌ No user ID found for credit deduction");
+                console.error("No user ID found for credit deduction");
               }
             }
 
-            // ✅ Update database
             await db.meeting.update({
               where: { id: meetingId },
               data: {
@@ -120,9 +115,8 @@ export async function GET(
               },
             });
 
-            console.log("✅ Meeting updated via polling");
+            console.log("Meeting updated via polling");
 
-            // ✅ Return updated meeting (remove project relations)
             const { project, ...meetingData } = meeting;
             return NextResponse.json({
               meeting: {
@@ -134,9 +128,8 @@ export async function GET(
             });
           }
 
-          // ❌ If failed at AssemblyAI
           if (asmData.status === "error") {
-            console.error("❌ AssemblyAI transcription failed");
+            console.error("AssemblyAI transcription failed");
             
             await db.meeting.update({
               where: { id: meetingId },
@@ -153,16 +146,13 @@ export async function GET(
           }
         }
       } catch (error: any) {
-        console.error("❌ Error checking AssemblyAI status:", error.message);
-        // Continue with current DB state
+        console.error("Error checking AssemblyAI status:", error.message);
       }
     }
-
-    // ✅ Return meeting as-is (remove project relations for cleaner response)
     const { project, ...meetingData } = meeting;
     return NextResponse.json({ meeting: meetingData });
   } catch (error: any) {
-    console.error("❌ Error fetching meeting detail:", error.message);
+    console.error("Error fetching meeting detail:", error.message);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

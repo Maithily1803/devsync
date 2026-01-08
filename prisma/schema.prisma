@@ -55,12 +55,13 @@ model UserToProject {
 
 model SourceCodeEmbedding {
   id               String                 @id @default(cuid())
-  summaryEmbedding Unsupported("vector(3072)")?
+  summaryEmbedding Unsupported("vector(384)")?
   sourceCode       String
   fileName         String
   summary          String
   projectId        String
   project          Project                @relation(fields: [projectId], references: [id])
+  @@unique([projectId, fileName], name: "projectId_fileName")
 }
 
 

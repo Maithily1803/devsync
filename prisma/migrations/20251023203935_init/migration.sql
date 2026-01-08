@@ -42,7 +42,7 @@ CREATE TABLE "UserToProject" (
 -- CreateTable
 CREATE TABLE "SourceCodeEmbedding" (
     "id" TEXT NOT NULL,
-    "summaryEmbedding" vector(3072),
+    "summaryEmbedding" vector(384),
     "sourceCode" TEXT NOT NULL,
     "fileName" TEXT NOT NULL,
     "summary" TEXT NOT NULL,

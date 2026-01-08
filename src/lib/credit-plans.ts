@@ -1,4 +1,3 @@
-// src/lib/credit-plans.ts
 export const CREDIT_PLANS = [
   { 
     id: "starter", 
@@ -47,9 +46,9 @@ export const CREDIT_PLANS = [
 ];
 
 export const CREDIT_COSTS = {
-  PROJECT_CREATED: 50,
+  NEW_PROJECT: 50,
   QUESTION_ASKED: 15,
-  MEETING_ISSUES_GENERATED: 20, // This is what we use in code
+  MEETING_ISSUES_GENERATED: 20,
 } as const;
 
 export type CreditAction = keyof typeof CREDIT_COSTS;

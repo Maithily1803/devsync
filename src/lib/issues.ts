@@ -1,13 +1,8 @@
-// src/lib/issues.ts
-import OpenAI from "openai";
+import Groq from "groq-sdk";
 import { z } from "zod";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY!,
-  baseURL: "https://openrouter.ai/api/v1",
-  defaultHeaders: {
-    "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
-  },
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY!,
 });
 
 export const IssueSchema = z.object({
@@ -18,108 +13,119 @@ export const IssueSchema = z.object({
   category: z.enum(["bug", "feature", "task", "discussion"]),
   assignedTo: z.string().default(""),
   timestamp: z.string().default("N/A"),
-
 });
 
 export type Issue = z.infer<typeof IssueSchema>;
+
+const ISSUE_SYSTEM_PROMPT =
+  `
+You are extracting ACTIONABLE issues from a meeting transcript.
+
+RULES:
+- Extract AT MOST 3 issues
+- Prefer HIGH priority over medium, medium over low
+- Merge similar or repeated discussions into ONE issue
+- Ignore vague chatter and opinions
+- Return ONLY valid JSON (no markdown, no explanations)
+
+If fewer than 3 real issues exist, return fewer.
+If nothing actionable exists, return [].
+`.trim();
+
+function truncateTranscript(text: string, maxChars = 12_000) {
+  return text.length > maxChars
+    ? text.slice(0, maxChars) + "\n\n[...truncated]"
+    : text;
+}
+
+const PRIORITY_ORDER: Record<Issue["priority"], number> = {
+  high: 3,
+  medium: 2,
+  low: 1,
+};
 
 export async function generateIssuesFromTranscript(
   transcript: string,
   meetingName: string
 ): Promise<Issue[]> {
   try {
-    console.log(`🤖 Generating issues for: ${meetingName}`);
-    console.log(`📝 Transcript length: ${transcript.length} chars`);
+    if (!transcript || transcript.length < 50) return [];
 
-    if (!transcript || transcript.length < 50) {
-      console.log("⚠️ Transcript too short");
-      return [];
-    }
+    const truncated = truncateTranscript(transcript);
 
-    const maxChars = 15000;
-    const truncated =
-      transcript.length > maxChars
-        ? transcript.slice(0, maxChars) + "\n\n[...truncated]"
-        : transcript;
-
-    const resp = await openai.chat.completions.create({
-      model: "openai/gpt-4o-mini",
+    const resp = await groq.chat.completions.create({
+      model: "llama-3.1-8b-instant",
       messages: [
         {
           role: "system",
-          content: `You are a senior product manager extracting actionable issues from meeting transcripts.
-Rules:
--Always extract issues if work, bugs, features, or decisions are discussed
-- If any vague discussion into one concrete task
-- Infer priority when not stated
-- Use "N/A" if no timestamp is mentioned
-- Use empty string if assignee is unknown
-- Return [] ONLY if the transcript is completely irrelevant
-Return ONLY valid JSON array, no markdown:
+          content: ISSUE_SYSTEM_PROMPT,
+        },
+        {
+          role: "user",
+          content: `
+Meeting: ${meetingName}
+
+Transcript:
+${truncated}
+
+Return JSON in this format ONLY:
 [
   {
     "id": "Issue-1",
     "title": "Short actionable title",
-    "description": "Clear task or decision derived from the discussion",
+    "description": "Clear task or decision",
     "timestamp": "HH:MM | N/A",
     "priority": "low | medium | high",
     "category": "bug | feature | task | discussion",
     "assignedTo": ""
   }
 ]
-
-If no issues found, return []`,
-        },
-        {
-          role: "user",
-          content: `Meeting: ${meetingName}\n\nTranscript:\n${truncated}\n\nExtract issues:`,
+          `.trim(),
         },
       ],
-      temperature: 0.3,
-      max_tokens: 2000,
+      temperature: 0.2,
+      max_tokens: 700,
     });
 
-    let cleanText = resp.choices?.[0]?.message?.content?.trim() ?? "[]";
+    let raw = resp.choices?.[0]?.message?.content ?? "[]";
 
-    // Remove markdown code blocks if present
-    cleanText = cleanText
+    // Hard clean
+    raw = raw
       .replace(/```json\n?/g, "")
       .replace(/```\n?/g, "")
+      .replace(/<think>[\s\S]*?<\/think>/gi, "")
       .trim();
 
     let parsed: unknown;
-
     try {
-      parsed = JSON.parse(cleanText);
+      parsed = JSON.parse(raw);
     } catch {
-      console.error("❌ Failed to parse AI JSON output:", cleanText);
+      console.error("Invalid JSON from model:", raw);
       return [];
     }
 
-    if (!Array.isArray(parsed)) {
-      console.error("❌ AI output is not an array:", parsed);
-      return [];
-    }
+    if (!Array.isArray(parsed)) return [];
 
-    // ✅ Validate issues individually instead of all-or-nothing
-    const validIssues: Issue[] = [];
+    const validated: Issue[] = [];
 
     for (const item of parsed) {
-      const result = IssueSchema.safeParse(item);
-      if (result.success) {
-        validIssues.push(result.data);
-      } else {
-        console.warn("⚠️ Invalid issue skipped:", item);
+      const res = IssueSchema.safeParse(item);
+      if (res.success) {
+        validated.push(res.data);
       }
     }
 
-    console.log(`✅ Generated ${validIssues.length} issues`);
-    return validIssues;
+    return validated
+      .sort(
+        (a, b) =>
+          PRIORITY_ORDER[b.priority] - PRIORITY_ORDER[a.priority]
+      )
+      .slice(0, 3);
 
-  } catch (error: any) {
+  } catch (err: any) {
     console.error(
-      "❌ Issue generation failed:",
-      error?.response?.data || error?.message || error
+      " Issue extraction failed:",
+      err?.response?.data || err?.message || err
     );
     return [];
   }

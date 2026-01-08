@@ -1,3 +1,4 @@
+// src/app/(protected)/dashboard/invite-button.tsx
 'use client'
 import { DialogHeader, Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -23,7 +24,7 @@ const InviteButton = () => {
           </p>
 
           <Input
-            className="mt-4 text-sm sm:text-base"
+            className="mt-4 text-sm sm:text-base cursor-pointer"
             readOnly
             onClick={() => {
               navigator.clipboard.writeText(
@@ -57,4 +58,3 @@ const InviteButton = () => {
 }
 
 export default InviteButton
-

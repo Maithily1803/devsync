@@ -1,11 +1,12 @@
-// src/server/api/routers/project.ts
-import { pollCommits } from "@/lib/github";
-import { createTRPCRouter, protectedProcedure } from "../trpc";
-import { z } from "zod";
-import { indexGithubRepo } from "@/lib/github-loader";
-import { consumeCredits } from "@/lib/credit-service";
+import { pollCommits } from "@/lib/github"
+import { createTRPCRouter, protectedProcedure } from "../trpc"
+import { z } from "zod"
+import { indexGithubRepo } from "@/lib/github-loader"
+import { consumeCredits } from "@/lib/credit-service"
 
 export const projectRouter = createTRPCRouter({
+
+
   createProject: protectedProcedure
     .input(
       z.object({
@@ -14,36 +15,36 @@ export const projectRouter = createTRPCRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const userId = ctx.userId;
+      const userId = ctx.userId
 
-      // ✅ Ensure user exists
-      await ctx.db.user.upsert({
+      let user = await ctx.db.user.findUnique({
         where: { id: userId },
-        update: {},
-        create: {
-          id: userId,
-          emailAddress: "",
-          credits: 0, // New users start with 0 credits
-        },
-      });
+      })
 
-      // ✅ Check and consume credits BEFORE creating project
-      try {
-        await consumeCredits(
-          userId,
-          "PROJECT_CREATED",
-          undefined,
-          `Created project: ${input.name}`
-        );
-      } catch (error: any) {
-        // If InsufficientCreditsError, throw readable error
-        if (error.name === "InsufficientCreditsError") {
-          throw new Error("Insufficient credits. Please purchase more credits to create a project.");
-        }
-        throw error;
+      if (!user) {
+        user = await ctx.db.user.create({
+          data: {
+            id: userId,
+            emailAddress: "",
+            credits: 100,
+          },
+        })
       }
 
-      // ✅ Create project after credit deduction
+      if (user.credits === 0) {
+        await ctx.db.user.update({
+          where: { id: userId },
+          data: { credits: 100 },
+        })
+      }
+
+      await consumeCredits(
+        userId,
+        "NEW_PROJECT",
+        undefined,
+        `Created project: ${input.name}`
+      )
+
       const project = await ctx.db.project.create({
         data: {
           name: input.name,
@@ -52,43 +53,13 @@ export const projectRouter = createTRPCRouter({
             create: { userId },
           },
         },
-      });
+      })
 
-      // ✅ Background indexing (no await)
       indexGithubRepo(project.id, input.githubUrl)
-        .then(() => {
-          console.log(`✅ Indexing complete for project: ${project.id}`);
-          return pollCommits(project.id);
-        })
-        .catch((err) => {
-          console.error(`❌ Background indexing failed: ${err.message}`);
-        });
+        .then(() => pollCommits(project.id))
+        .catch(console.error)
 
-      return project;
-    }),
-
-  getProjects: protectedProcedure.query(async ({ ctx }) => {
-    const userId = ctx.userId;
-
-    return await ctx.db.project.findMany({
-      where: {
-        UserToProjects: {
-          some: { userId },
-        },
-        deletedAt: null,
-      },
-    });
-  }),
-
-  getCommits: protectedProcedure
-    .input(z.object({ projectId: z.string() }))
-    .query(async ({ ctx, input }) => {
-      pollCommits(input.projectId).catch(console.error);
-
-      return await ctx.db.commit.findMany({
-        where: { projectId: input.projectId },
-        orderBy: { commitDate: "desc" },
-      });
+      return project
     }),
 
   saveAnswer: protectedProcedure
@@ -96,61 +67,85 @@ export const projectRouter = createTRPCRouter({
       z.object({
         projectId: z.string(),
         question: z.string(),
-        answer: z.string(),
-        filesReferences: z.any(),
+        answer: z.string(), 
+        filesReferences: z.array(
+          z.object({
+            fileName: z.string(),
+            sourceCode: z.string(),
+            summary: z.string().optional(),
+            similarity: z.number().optional(),
+          })
+        ),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      return await ctx.db.question.create({
+      const { projectId, question, answer, filesReferences } = input
+
+      return ctx.db.question.create({
         data: {
-          answer: input.answer,
-          filesReferences: input.filesReferences,
-          projectId: input.projectId,
-          question: input.question,
+          projectId,
+          question,
+          answer,
+          filesReferences,
           userId: ctx.userId,
         },
-      });
+      })
     }),
 
   getQuestions: protectedProcedure
     .input(z.object({ projectId: z.string() }))
     .query(async ({ ctx, input }) => {
-      return await ctx.db.question.findMany({
-        where: {
-          projectId: input.projectId,
-        },
-        include: {
-          user: true,
-        },
-        orderBy: {
-          createdAt: "desc",
-        },
-      });
+      return ctx.db.question.findMany({
+        where: { projectId: input.projectId },
+        include: { user: true },
+        orderBy: { createdAt: "desc" },
+      })
     }),
 
   deleteQuestion: protectedProcedure
     .input(z.object({ questionId: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      return await ctx.db.question.delete({
+      return ctx.db.question.delete({
         where: { id: input.questionId },
-      });
+      })
+    }),
+
+  getProjects: protectedProcedure.query(async ({ ctx }) => {
+    return ctx.db.project.findMany({
+      where: {
+        UserToProjects: { some: { userId: ctx.userId } },
+        deletedAt: null,
+      },
+    })
+  }),
+
+  getCommits: protectedProcedure
+    .input(z.object({ projectId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      pollCommits(input.projectId).catch(console.error)
+
+      return ctx.db.commit.findMany({
+        where: { projectId: input.projectId },
+        orderBy: { commitDate: "desc" },
+      })
     }),
 
   archiveProject: protectedProcedure
     .input(z.object({ projectId: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      return await ctx.db.project.update({
+      return ctx.db.project.update({
         where: { id: input.projectId },
         data: { deletedAt: new Date() },
-      });
+      })
     }),
 
   getTeamMembers: protectedProcedure
     .input(z.object({ projectId: z.string() }))
     .query(async ({ ctx, input }) => {
-      return await ctx.db.userToProject.findMany({
+      return ctx.db.userToProject.findMany({
         where: { projectId: input.projectId },
         include: { user: true },
-      });
+      })
     }),
-});
+})
+

@@ -61,7 +61,7 @@ const AskQuestionCard = () => {
           },
           {
             onSuccess: () => {
-              toast.success('Answer saved automatically!')
+              toast.success('Answer saved!')
               refetch()
             },
             onError: () => {
@@ -79,7 +79,6 @@ const AskQuestionCard = () => {
 
   return (
     <>
-      {/* Answer dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
           className="
@@ -136,7 +135,7 @@ const AskQuestionCard = () => {
           <div className="border-t px-4 sm:px-6 py-3">
             <Button
               type="button"
-              className="w-full text-sm sm:text-base"
+              className="w-full text-sm sm:text-base cursor-pointer"
               onClick={() => {
                 setOpen(false)
                 setQuestion('')

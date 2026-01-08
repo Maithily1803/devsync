@@ -133,7 +133,6 @@ export default function MeetingPage() {
             </h2>
           </div>
 
-          {/* Loading State */}
           {loading && initialLoad && (
             <ul className="divide-y">
               <MeetingSkeletonRow />
@@ -142,7 +141,7 @@ export default function MeetingPage() {
             </ul>
           )}
 
-          {/* Empty State */}
+
           {!loading && meetings.length === 0 && (
             <div className="text-center py-12 sm:py-16 px-4">
               <div className="mx-auto max-w-md">
@@ -153,13 +152,13 @@ export default function MeetingPage() {
                   No meetings yet.
                 </h3>
                 <p className="text-sm text-gray-500">
-                  Upload your first meeting to get started with AI-powered transcription and analysis.
+                  Upload your first meeting to get started with AI-powered analysis & issues.
                 </p>
               </div>
             </div>
           )}
 
-          {/* Meetings List */}
+    
           {!loading && meetings.length > 0 && (
             <ul className="divide-y">
               {meetings.map((meeting) => (

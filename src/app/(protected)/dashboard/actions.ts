@@ -1,36 +1,27 @@
-// src/app/(protected)/dashboard/actions.ts
 'use server'
-
-import OpenAI from "openai"
-import { generateEmbedding } from "@/lib/ai-service"
+import { generateEmbedding } from "@/lib/embeddings"
+import {
+  generateCodeQAResponse,
+  generateCommitQAResponse,
+} from "@/lib/ai-service"
 import { db } from "@/server/db"
 import { auth } from "@clerk/nextjs/server"
 import { consumeCredits } from "@/lib/credit-service"
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY!,
-  baseURL: "https://openrouter.ai/api/v1",
-  defaultHeaders: {
-    "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
-  },
-})
-
-function classifyQuestion(question: string) {
+function isCommitQuestion(question: string) {
   const q = question.toLowerCase()
+  return (
+    q.includes("commit") ||
+    q.includes("which commit") ||
+    q.includes("commit modified") ||
+    q.includes("commit changed")
+  )
+}
 
-  if (q.includes("project name") || q.includes("name of this project")) {
-    return "META_PROJECT_NAME"
-  }
-
-  if (
-    q.includes("does this project use") ||
-    q.includes("which ai") ||
-    q.includes("which model")
-  ) {
-    return "ARCHITECTURE"
-  }
-
-  return "CODE"
+function truncateCode(code: string, maxChars = 2800) {
+  return code.length > maxChars
+    ? code.slice(0, maxChars) + "\n/* truncated */"
+    : code
 }
 
 export async function askQuestion(
@@ -45,145 +36,110 @@ export async function askQuestion(
     similarity: number
   }[]
 }> {
-  const questionType = classifyQuestion(question)
-  let answer = ""
+  console.log("Question:", question)
 
-  console.log("❓ Question:", question)
-  console.log("🧭 Question type:", questionType)
+//auth
 
-  /* ---------------- AUTH ---------------- */
   const { userId } = await auth()
   if (!userId) {
-    return {
-      answer: "Error: You must be logged in.",
-      filesReferences: [],
-    }
+    return { answer: "You must be logged in.", filesReferences: [] }
   }
 
-  /* ---------------- CREDITS ---------------- */
-  try {
-    await consumeCredits(
-      userId,
-      "QUESTION_ASKED",
-      projectId,
-      `Asked: ${question.slice(0, 50)}...`
-    )
-    console.log("✅ Credits consumed successfully")
-  } catch {
-    return {
-      answer:
-        "⚠️ Insufficient credits. Please purchase more credits to continue using AI features.",
-      filesReferences: [],
-    }
-  }
+//credits
 
-  /* ---------------- META QUESTIONS ---------------- */
-  if (questionType === "META_PROJECT_NAME") {
-    const project = await db.project.findUnique({
-      where: { id: projectId },
-      select: { name: true },
+  await consumeCredits(
+    userId,
+    "QUESTION_ASKED",
+    projectId,
+    question.slice(0, 50)
+  )
+
+//commit quest
+
+  if (isCommitQuestion(question)) {
+    const commits = await db.commit.findMany({
+      where: {
+        projectId,
+        summary: { not: "" },
+      },
+      orderBy: { commitDate: "desc" },
+      take: 10,
     })
 
-    return {
-      answer: project
-        ? `The project is called **${project.name}**.`
-        : "I couldn't find the project name.",
-      filesReferences: [],
-    }
-  }
-
-  /* ---------------- CODE SEARCH ---------------- */
-  let result: {
-    fileName: string
-    sourceCode: string
-    summary: string
-    similarity: number
-  }[] = []
-
-  try {
-    console.log("🔍 Generating embedding...")
-    const queryVector = await generateEmbedding(question)
-
-    if (!queryVector || queryVector.length === 0) {
-      throw new Error("Failed to generate embedding")
-    }
-
-    const vectorQuery = `[${queryVector.join(",")}]`
-
-    console.log("📊 Searching codebase...")
-    result = (await db.$queryRaw`
-      SELECT "fileName", "sourceCode", "summary",
-        1 - ("summaryEmbedding" <=> ${vectorQuery}::vector) AS similarity
-      FROM "SourceCodeEmbedding"
-      WHERE 1 - ("summaryEmbedding" <=> ${vectorQuery}::vector) > 0.25
-        AND "projectId" = ${projectId}
-      ORDER BY similarity DESC
-      LIMIT 10
-    `) as any
-
-    console.log(`✅ Found ${result.length} relevant files`)
-
-    if (result.length === 0) {
+    if (!commits.length) {
       return {
-        answer:
-          "I couldn't find relevant code files for this question.\n\n" +
-          "This likely means the information is not implemented in the codebase, " +
-          "or it exists only as a product or configuration detail.",
+        answer: "No commit summaries available yet.",
         filesReferences: [],
       }
     }
 
-    /* ---------------- BUILD CONTEXT ---------------- */
-    let context = ""
-    for (const doc of result) {
-      const code =
-        doc.sourceCode.length > 3000
-          ? doc.sourceCode.slice(0, 3000) + "\n[...truncated]"
-          : doc.sourceCode
+    const context = commits
+      .map(
+        (c) => `
+COMMIT: ${c.commitHash.slice(0, 7)}
+MESSAGE: ${c.commitMessage}
+SUMMARY:
+${c.summary}
+`.trim()
+      )
+      .join("\n\n---\n\n")
 
-      context += `
-═══════════════════════════════════
-FILE: ${doc.fileName}
-SUMMARY: ${doc.summary}
-CODE:
-${code}
-═══════════════════════════════════
-`
+    const answer = await generateCommitQAResponse(context, question)
+
+    return {
+      answer,
+      filesReferences: [],
     }
-
-    /* ---------------- AI COMPLETION ---------------- */
-    const completion = await openai.chat.completions.create({
-      model: "openai/gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content: `You are a senior software engineer reviewing a codebase.
-
-Rules:
-- Answer ONLY using the provided code context
-- Reference real file names
-- Be precise and technical
-- If the answer is not present, say so clearly
-- Use markdown for code blocks`,
-        },
-        {
-          role: "user",
-          content: `CODEBASE:\n${context}\n\nQUESTION:\n${question}`,
-        },
-      ],
-      temperature: 0.2,
-      max_tokens: 1000,
-    })
-
-    answer = completion.choices[0]?.message?.content ?? ""
-
-  } catch (err: any) {
-    console.error("❌ Question error:", err.message)
-    answer = `**Error:** ${err.message}`
   }
+
+//code quest
+
+  const queryVector = await generateEmbedding(question)
+  if (!queryVector.length) {
+    return {
+      answer: "Unable to process this question.",
+      filesReferences: [],
+    }
+  }
+
+  const vectorQuery = `[${queryVector.join(",")}]`
+
+  const files = (await db.$queryRaw`
+    SELECT
+      "fileName",
+      "sourceCode",
+      "summary",
+      1 - ("summaryEmbedding" <=> ${vectorQuery}::vector) AS similarity
+    FROM "SourceCodeEmbedding"
+    WHERE "projectId" = ${projectId}
+      AND 1 - ("summaryEmbedding" <=> ${vectorQuery}::vector) > 0.25
+    ORDER BY similarity DESC
+    LIMIT 6
+  `) as any[]
+
+  if (!files.length) {
+    return {
+      answer: "Not found in the codebase.",
+      filesReferences: [],
+    }
+  }
+
+  const context = files
+    .map(
+      (f) => `
+FILE: ${f.fileName}
+
+${truncateCode(f.sourceCode)}
+`.trim()
+    )
+    .join("\n\n----------------\n\n")
+
+  const answer = await generateCodeQAResponse(context, question)
 
   return {
     answer,
-    filesReferences: result,
+    filesReferences: files,
   }
 }
+
+

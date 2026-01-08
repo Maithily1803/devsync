@@ -1,3 +1,4 @@
+// src/app/(protected)/dashboard/commit-log.tsx
 'use client'
 
 import useProject from '@/hooks/use-project'
@@ -12,8 +13,22 @@ const CommitLog = () => {
 
   const { data: commits, isLoading } = api.project.getCommits.useQuery(
     { projectId },
-    { enabled: !!projectId, refetchInterval: 30000 }
+    { 
+      enabled: !!projectId && !!project, 
+      refetchInterval: 30000 
+    }
   )
+
+  //when no project is selected
+  if (!project || !projectId) {
+    return (
+      <div className="text-center py-10 sm:py-12 bg-white rounded-lg border">
+        <p className="text-sm sm:text-base text-muted-foreground">
+          Select a project to view commits
+        </p>
+      </div>
+    )
+  }
 
   return (
     <ul role="list" className="space-y-5 sm:space-y-6">
@@ -33,9 +48,6 @@ const CommitLog = () => {
       {!isLoading && commits?.length === 0 && (
         <li className="text-center py-10 sm:py-12 bg-white rounded-lg border">
           <p className="text-sm sm:text-base text-muted-foreground">
-            No commits found yet.
-          </p>
-          <p className="text-xs sm:text-sm text-muted-foreground mt-1">
             Commits will appear here automatically
           </p>
         </li>
