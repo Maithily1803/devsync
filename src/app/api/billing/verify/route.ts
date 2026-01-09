@@ -1,4 +1,3 @@
-// src/app/api/billing/verify/route.ts
 import { NextResponse } from "next/server";
 import { db } from "@/server/db";
 import crypto from "crypto";
@@ -8,7 +7,7 @@ export async function POST(req: Request) {
     console.log("🔐 Payment verification started");
 
     const body = await req.json();
-    console.log("📥 Received data:", {
+    console.log("Received data:", {
       hasOrderId: !!body.razorpay_order_id,
       hasPaymentId: !!body.razorpay_payment_id,
       hasSignature: !!body.razorpay_signature,
@@ -20,17 +19,15 @@ export async function POST(req: Request) {
       razorpay_signature,
     } = body;
 
-    // Validate required fields
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-      console.error("❌ Missing required fields");
+      console.error("Missing required fields");
       return NextResponse.json(
         { error: "Missing required payment data" },
         { status: 400 }
       );
     }
 
-    // Verify signature
-    console.log("🔍 Verifying signature...");
+    console.log("Verifying signature...");
     const text = `${razorpay_order_id}|${razorpay_payment_id}`;
     
     const expectedSignature = crypto
@@ -39,7 +36,7 @@ export async function POST(req: Request) {
       .digest("hex");
 
     if (expectedSignature !== razorpay_signature) {
-      console.error("❌ Invalid signature");
+      console.error("Invalid signature");
       console.error("Expected:", expectedSignature);
       console.error("Received:", razorpay_signature);
       
@@ -49,27 +46,25 @@ export async function POST(req: Request) {
       );
     }
 
-    console.log("✅ Signature verified successfully");
+    console.log("Signature verified successfully");
 
-    // Find payment record
-    console.log("🔍 Finding payment record...");
+    console.log("Finding payment record...");
     const payment = await db.payment.findFirst({
       where: { razorpayOrder: razorpay_order_id },
     });
 
     if (!payment) {
-      console.error("❌ Payment record not found:", razorpay_order_id);
+      console.error("Payment record not found:", razorpay_order_id);
       return NextResponse.json(
         { error: "Payment record not found" },
         { status: 404 }
       );
     }
 
-    console.log("✅ Payment record found:", payment.id);
+    console.log("Payment record found:", payment.id);
 
-    // Check if already processed
     if (payment.status === "paid") {
-      console.log("⚠️ Payment already processed");
+      console.log("Payment already processed");
       return NextResponse.json({
         success: true,
         credits: payment.credits,
@@ -77,8 +72,7 @@ export async function POST(req: Request) {
       });
     }
 
-    // Update payment and add credits in transaction
-    console.log("💾 Updating payment and adding credits...");
+    console.log("Updating payment and adding credits...");
     
     const [updatedPayment, updatedUser] = await db.$transaction([
       db.payment.update({
@@ -97,9 +91,9 @@ export async function POST(req: Request) {
       }),
     ]);
 
-    console.log("✅ Payment verified and credits added");
-    console.log("💰 Credits added:", payment.credits);
-    console.log("💰 New balance:", updatedUser.credits);
+    console.log("Payment verified and credits added");
+    console.log("Credits added:", payment.credits);
+    console.log("New balance:", updatedUser.credits);
 
     return NextResponse.json({
       success: true,
@@ -107,7 +101,7 @@ export async function POST(req: Request) {
       newBalance: updatedUser.credits,
     });
   } catch (error: any) {
-    console.error("❌ Payment verification error:", error);
+    console.error("Payment verification error:", error);
     console.error("Stack:", error.stack);
     
     return NextResponse.json(

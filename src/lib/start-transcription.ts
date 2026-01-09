@@ -1,4 +1,3 @@
-// src/lib/start-transcription.ts
 import { db } from "@/server/db";
 
 export async function startTranscription(
@@ -23,7 +22,7 @@ export async function startTranscription(
 
   if (!assemblyRes.ok) {
     const errorText = await assemblyRes.text();
-    console.error("❌ AssemblyAI rejected request:", errorText);
+    console.error("AssemblyAI rejected request:", errorText);
 
     await db.meeting.update({
       where: { id: meetingId },
@@ -36,11 +35,11 @@ export async function startTranscription(
   const assemblyData = await assemblyRes.json();
 
   if (!assemblyData.id) {
-    console.error("❌ No transcript ID returned:", assemblyData);
+    console.error("No transcript ID returned:", assemblyData);
     throw new Error("AssemblyAI did not return transcript ID");
   }
 
-  console.log("💾 Saving AssemblyAI transcript ID:", assemblyData.id);
+  console.log("Saving AssemblyAI transcript ID:", assemblyData.id);
 
   await db.meeting.update({
     where: { id: meetingId },

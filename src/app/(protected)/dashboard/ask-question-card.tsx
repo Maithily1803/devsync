@@ -1,5 +1,4 @@
 'use client'
-
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -148,7 +147,7 @@ const AskQuestionCard = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Ask question card */}
+  
       <Card className="col-span-1 sm:col-span-3">
         <CardHeader>
           <CardTitle className="text-base sm:text-lg font-semibold">

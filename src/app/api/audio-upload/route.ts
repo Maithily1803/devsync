@@ -1,4 +1,3 @@
-// src/app/api/audio-upload/route.ts
 import { supabaseServer } from "@/lib/supabaseServer";
 import { db } from "@/server/db";
 import { auth } from "@clerk/nextjs/server";
@@ -10,7 +9,7 @@ export const maxDuration = 60;
 
 export async function POST(req: Request) {
   try {
-    console.log("📤 Audio upload started");
+    console.log("Audio upload started");
 
     const { userId } = await auth();
     if (!userId) {
@@ -21,7 +20,7 @@ export async function POST(req: Request) {
     const file = formData.get("file") as File | null;
     const projectId = formData.get("projectId") as string | null;
 
-    console.log("📋 Form data:", {
+    console.log("Form data:", {
       hasFile: !!file,
       fileName: file?.name,
       fileSize: file?.size,
@@ -46,7 +45,7 @@ export async function POST(req: Request) {
       );
     }
 
-    console.log("☁️ Uploading to Supabase...");
+    console.log("Uploading to Supabase...");
 
     const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
     const filePath = `aud/${Date.now()}-${safeName}`;
@@ -59,14 +58,14 @@ export async function POST(req: Request) {
       });
 
     if (upload.error) {
-      console.error("❌ Supabase upload error:", upload.error);
+      console.error("Supabase upload error:", upload.error);
       return NextResponse.json(
         { error: upload.error.message },
         { status: 500 }
       );
     }
 
-    console.log("✅ File uploaded to Supabase:", filePath);
+    console.log("File uploaded to Supabase:", filePath);
 
     const { data: publicUrlData } = supabaseServer.storage
       .from("aud")
@@ -75,7 +74,7 @@ export async function POST(req: Request) {
     const audioUrl = publicUrlData.publicUrl;
     console.log("🔗 Audio URL:", audioUrl);
 
-    console.log("💾 Creating meeting record...");
+    console.log("Creating meeting record...");
 
     const meeting = await db.meeting.create({
       data: {
@@ -86,9 +85,8 @@ export async function POST(req: Request) {
       },
     });
 
-    console.log("✅ Meeting created:", meeting.id);
+    console.log("Meeting created:", meeting.id);
 
-    // 🚀 START TRANSCRIPTION (webhook will handle credit deduction when issues are generated)
     await startTranscription(audioUrl, meeting.id);
 
     return NextResponse.json(
@@ -100,12 +98,12 @@ export async function POST(req: Request) {
           audioUrl: meeting.audioUrl,
           status: meeting.status,
         },
-        message: "Audio uploaded successfully. Transcription started.",
+        message: "Audio uploaded successfully.",
       },
       { status: 200 }
     );
   } catch (error) {
-    console.error("❌ Audio upload failed:", error);
+    console.error("Audio upload failed:", error);
 
     return NextResponse.json(
       {

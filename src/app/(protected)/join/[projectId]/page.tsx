@@ -1,4 +1,3 @@
-// src/app/(protected)/join/[projectId]/page.tsx
 import React from 'react'
 import { auth, clerkClient } from '@clerk/nextjs/server'
 import { db } from '@/server/db'

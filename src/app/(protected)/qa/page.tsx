@@ -1,5 +1,4 @@
 'use client'
-
 import React from 'react'
 import {
   Sheet,
@@ -28,8 +27,6 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
 import useRefetch from '@/hooks/use-refetch'
-
-/* ================= TYPES ================= */
 
 type FileReference = {
   fileName: string
@@ -103,7 +100,6 @@ const QAPage = () => {
             )}
           </div>
 
-          {/* ⏳ LOADING SKELETON */}
           {isLoading && (
             <div className="space-y-3">
               {Array.from({ length: 3 }).map((_, i) => (
@@ -121,7 +117,6 @@ const QAPage = () => {
             </div>
           )}
 
-          {/* ✅ EMPTY STATE */}
           {!isLoading && questions && questions.length === 0 && (
             <div className="flex flex-col items-center justify-center py-16 text-center border rounded-lg bg-white">
               <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
@@ -134,7 +129,6 @@ const QAPage = () => {
             </div>
           )}
 
-          {/* ✅ QUESTIONS LIST */}
           {!isLoading && questions && questions.length > 0 && (
             <div className="space-y-3">
               {questions.map((q, index) => (

@@ -1,12 +1,7 @@
 import "@/styles/globals.css";
-
 import {ClerkProvider} from '@clerk/nextjs'
-
-
-
 import { type Metadata } from "next";
 import { Geist } from "next/font/google";
-
 import { TRPCReactProvider } from "@/trpc/react";
 import { Toaster } from "sonner";
 

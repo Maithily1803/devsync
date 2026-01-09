@@ -1,4 +1,3 @@
-// src/app/(protected)/dashboard/invite-button.tsx
 'use client'
 import { DialogHeader, Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'

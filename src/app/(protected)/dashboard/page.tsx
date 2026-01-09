@@ -1,4 +1,3 @@
-// src/app/(protected)/dashboard/page.tsx
 'use client'
 
 import useProject from '@/hooks/use-project'

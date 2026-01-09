@@ -111,7 +111,6 @@ async function generateEmbeddings(
 }
 
 //indexing repo
-
 export async function indexGithubRepo(
   projectId: string,
   githubUrl: string

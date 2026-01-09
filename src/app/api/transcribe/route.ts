@@ -1,4 +1,3 @@
-// src/app/api/transcribe/route.ts
 import { NextResponse } from "next/server";
 import { db } from "@/server/db";
 
@@ -8,35 +7,32 @@ export async function POST(req: Request) {
 
     console.log("🎤 Transcription request:", { audioUrl, meetingId });
 
-    // Validate input
     if (!audioUrl || !meetingId) {
-      console.error("❌ Missing required fields:", { audioUrl, meetingId });
+      console.error("Missing required fields:", { audioUrl, meetingId });
       return NextResponse.json(
         { error: "audioUrl and meetingId are required" },
         { status: 400 }
       );
     }
 
-    // Verify meeting exists
     const meeting = await db.meeting.findUnique({
       where: { id: meetingId },
     });
 
     if (!meeting) {
-      console.error("❌ Meeting not found:", meetingId);
+      console.error("Meeting not found:", meetingId);
       return NextResponse.json(
         { error: "Meeting not found" },
         { status: 404 }
       );
     }
 
-    console.log("✅ Meeting verified:", meeting.name);
+    console.log("Meeting verified:", meeting.name);
 
-    // Create AssemblyAI transcript
-    console.log("🚀 Creating AssemblyAI transcript...");
+    console.log("Creating AssemblyAI transcript...");
     
     const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/assembly/webhook`;
-    console.log("🔗 Webhook URL:", webhookUrl);
+    console.log("Webhook URL:", webhookUrl);
 
     const assemblyRes = await fetch("https://api.assemblyai.com/v2/transcript", {
       method: "POST",
@@ -54,7 +50,7 @@ export async function POST(req: Request) {
 
     if (!assemblyRes.ok) {
   const errorText = await assemblyRes.text();
-  console.error("❌ AssemblyAI error:", errorText);
+  console.error("AssemblyAI error:", errorText);
 
   await db.meeting.update({
     where: { id: meetingId },
@@ -68,15 +64,14 @@ export async function POST(req: Request) {
 }
     const assemblyData = await assemblyRes.json();
 
-    console.log("📊 AssemblyAI response:", {
+    console.log("AssemblyAI response:", {
       ok: assemblyRes.ok,
       status: assemblyRes.status,
       id: assemblyData.id,
     });
 
-    // Handle errors
     if (!assemblyRes.ok) {
-      console.error("❌ AssemblyAI rejected request:", assemblyData);
+      console.error("AssemblyAI rejected request:", assemblyData);
       
       await db.meeting.update({
         where: { id: meetingId },
@@ -93,7 +88,7 @@ export async function POST(req: Request) {
     }
 
     if (!assemblyData.id) {
-      console.error("❌ No transcript ID in response:", assemblyData);
+      console.error("No transcript ID in response:", assemblyData);
       
       await db.meeting.update({
         where: { id: meetingId },
@@ -106,8 +101,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // Save transcript job ID
-    console.log("💾 Saving transcript ID to database...");
+    console.log("Saving transcript ID to database...");
     await db.meeting.update({
       where: { id: meetingId },
       data: { 
@@ -116,7 +110,7 @@ export async function POST(req: Request) {
       },
     });
 
-    console.log("✅ Transcription started successfully:", assemblyData.id);
+    console.log("Transcription started successfully:", assemblyData.id);
 
     return NextResponse.json({ 
       transcriptId: assemblyData.id,
@@ -124,7 +118,7 @@ export async function POST(req: Request) {
       message: "Transcription started successfully"
     });
   } catch (error) {
-    console.error("❌ Transcribe API error:", error);
+    console.error("Transcribe API error:", error);
     return NextResponse.json(
       { 
         error: "Internal server error",

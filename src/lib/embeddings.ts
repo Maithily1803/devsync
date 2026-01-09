@@ -1,11 +1,8 @@
-// src/lib/embeddings.ts
 import { pipeline } from "@xenova/transformers";
 
 let extractor: any = null;
 
-/**
- * Lazy-load embedding model once per process
- */
+
 async function getExtractor() {
   if (!extractor) {
     extractor = await pipeline(
@@ -16,9 +13,6 @@ async function getExtractor() {
   return extractor;
 }
 
-/**
- * Generate 384-dim embeddings locally (FREE, unlimited)
- */
 export async function generateEmbedding(text: string): Promise<number[]> {
   if (!text || text.trim().length < 10) return [];
 

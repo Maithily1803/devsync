@@ -3,6 +3,7 @@ import { createTRPCRouter, protectedProcedure } from "../trpc"
 import { z } from "zod"
 import { indexGithubRepo } from "@/lib/github-loader"
 import { consumeCredits } from "@/lib/credit-service"
+import { db } from "@/server/db"
 
 export const projectRouter = createTRPCRouter({
 
@@ -31,29 +32,31 @@ export const projectRouter = createTRPCRouter({
         })
       }
 
-      if (user.credits === 0) {
-        await ctx.db.user.update({
-          where: { id: userId },
-          data: { credits: 100 },
-        })
-      }
+      await db.user.create({
+  data: {
+    id: userId,
+    emailAddress: "",
+  },
+});
 
-      await consumeCredits(
-        userId,
-        "NEW_PROJECT",
-        undefined,
-        `Created project: ${input.name}`
-      )
 
       const project = await ctx.db.project.create({
-        data: {
-          name: input.name,
-          githubUrl: input.githubUrl,
-          UserToProjects: {
-            create: { userId },
-          },
-        },
-      })
+  data: {
+    name: input.name,
+    githubUrl: input.githubUrl,
+    UserToProjects: {
+      create: { userId },
+    },
+  },
+});
+
+await consumeCredits(
+  userId,
+  "NEW_PROJECT",
+  project.id,
+  `Created project: ${input.name}`
+);
+
 
       indexGithubRepo(project.id, input.githubUrl)
         .then(() => pollCommits(project.id))

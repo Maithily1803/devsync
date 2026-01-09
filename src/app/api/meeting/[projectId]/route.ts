@@ -1,10 +1,6 @@
 import { db } from "@/server/db";
 import { NextResponse } from "next/server";
 
-/**
- * GET /api/meeting/:projectId
- * → Fetch all meetings for a project
- */
 export async function GET(
   _req: Request,
   context: { params: Promise<{ projectId: string }> }
@@ -26,21 +22,13 @@ export async function GET(
   return NextResponse.json({ meetings });
 }
 
-/**
- * DELETE /api/meeting/:meetingId
- * → Delete a single meeting
- *
- * ⚠️ NOTE:
- * The param name is `projectId` because of folder name,
- * but here it represents `meetingId`.
- */
 export async function DELETE(
   _req: Request,
   context: { params: Promise<{ projectId: string }> }
 ) {
   try {
     const { projectId } = await context.params;
-    const meetingId = projectId; // 👈 interpret as meetingId
+    const meetingId = projectId; 
 
     if (!meetingId) {
       return NextResponse.json(
@@ -49,7 +37,6 @@ export async function DELETE(
       );
     }
 
-    // Check meeting exists
     const meeting = await db.meeting.findUnique({
       where: { id: meetingId },
     });
@@ -61,14 +48,14 @@ export async function DELETE(
       );
     }
 
-    // Delete meeting
+    // delete meeting
     await db.meeting.delete({
       where: { id: meetingId },
     });
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("❌ Failed to delete meeting:", error);
+    console.error("Failed to delete meeting:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

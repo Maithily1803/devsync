@@ -1,4 +1,3 @@
-// src/app/sync-user/page.tsx
 import { db } from '@/server/db'
 import { auth, clerkClient} from '@clerk/nextjs/server'
 import { notFound, redirect } from 'next/navigation'

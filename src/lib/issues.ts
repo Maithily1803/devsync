@@ -89,7 +89,6 @@ Return JSON in this format ONLY:
 
     let raw = resp.choices?.[0]?.message?.content ?? "[]";
 
-    // Hard clean
     raw = raw
       .replace(/```json\n?/g, "")
       .replace(/```\n?/g, "")

@@ -1,4 +1,3 @@
-// src/app/api/meeting-detail/[meetingId]/route.ts
 import { db } from "@/server/db";
 import { NextResponse } from "next/server";
 import { generateIssuesFromTranscript } from "@/lib/issues";
@@ -76,7 +75,7 @@ export async function GET(
               );
               console.log(`Generated ${issues.length} issues`);
             } catch (err: any) {
-              console.error("⚠️ Issue generation failed:", err.message);
+              console.error("Issue generation failed:", err.message);
             }
 
             if (issues.length > 0) {

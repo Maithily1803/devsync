@@ -1,4 +1,3 @@
-// src/app/(protected)/dashboard/commit-log.tsx
 'use client'
 
 import useProject from '@/hooks/use-project'
@@ -32,7 +31,7 @@ const CommitLog = () => {
 
   return (
     <ul role="list" className="space-y-5 sm:space-y-6">
-      {/* skeleton */}
+      
       {isLoading && !commits &&
         [1, 2, 3].map((i) => (
           <li
@@ -44,7 +43,7 @@ const CommitLog = () => {
           </li>
         ))}
 
-      {/* empty state */}
+
       {!isLoading && commits?.length === 0 && (
         <li className="text-center py-10 sm:py-12 bg-white rounded-lg border">
           <p className="text-sm sm:text-base text-muted-foreground">
@@ -53,10 +52,9 @@ const CommitLog = () => {
         </li>
       )}
 
-      {/* commit list */}
       {commits?.map((commit, commitIdx) => (
         <li key={commit.id} className="relative flex gap-x-3 sm:gap-x-4">
-          {/* timeline */}
+
           <div
             className={cn(
               commitIdx === commits.length - 1 ? 'h-6' : '-bottom-6',
@@ -66,14 +64,14 @@ const CommitLog = () => {
             <div className="w-px translate-x-1 bg-gray-200" />
           </div>
 
-          {/* avatar */}
+
           <img
             src={commit.commitAuthorAvatar}
             alt={commit.commitAuthorName}
             className="relative mt-2 h-7 w-7 sm:h-8 sm:w-8 rounded-full bg-gray-50 ring-1 ring-gray-100"
           />
 
-          {/* content */}
+
           <div className="flex-auto rounded-md bg-white p-3 sm:p-4 ring-1 ring-gray-200 hover:ring-gray-300 transition">
             <div className="flex justify-between gap-x-3 mb-2">
               <Link

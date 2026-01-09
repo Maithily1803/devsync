@@ -1,4 +1,3 @@
-// src/app/api/credits/stats/route.ts
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { getCreditStats, getCreditUsageHistory } from "@/lib/credit-service";
@@ -18,7 +17,7 @@ export async function GET() {
 
     return NextResponse.json({ stats, history });
   } catch (error) {
-    console.error("❌ Credit stats error:", error);
+    console.error("Credit stats error:", error);
     return NextResponse.json(
       { error: "Failed to fetch stats" },
       { status: 500 }

@@ -63,7 +63,7 @@ const IssueDialog = ({ issue, open, onOpenChange }: Props) => {
             )}
           </div>
 
-          {/* Description */}
+     
           <div className="rounded-lg bg-muted/30 p-5">
             <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">
               <AlertCircle className="h-4 w-4" />

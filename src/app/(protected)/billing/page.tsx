@@ -1,4 +1,3 @@
-// src/app/(protected)/billing/page.tsx
 "use client";
 
 import Script from "next/script";
@@ -34,6 +33,7 @@ type UsageItem = {
 declare global {
   interface Window {
     Razorpay: any;
+    RAZORPAY_KEY_ID?: string;
   }
 }
 
@@ -52,7 +52,6 @@ export default function BillingPage() {
       setStats(data.stats ?? null);
       setHistory(Array.isArray(data.history) ? data.history : []);
     } catch (err) {
-      console.error("Failed to fetch credits:", err);
       setHistory([]);
     } finally {
       setLoading(false);
@@ -66,27 +65,19 @@ export default function BillingPage() {
   }, []);
 
   const buyCredits = async (planId: string) => {
-    if (purchasingPlanId) {
-      console.log("⏳ Purchase already in progress");
-      return;
-    }
-
+    if (purchasingPlanId) return;
     if (!razorpayLoaded) {
       toast.error("Payment gateway loading, please wait...");
       return;
     }
-
     if (!window.Razorpay) {
       toast.error("Payment gateway not available. Please refresh the page.");
       return;
     }
 
     try {
-      console.log("🛒 Starting purchase for plan:", planId);
       setPurchasingPlanId(planId);
 
-      // Create order
-      console.log("📤 Creating order...");
       const res = await fetch("/api/billing/create-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -99,21 +90,38 @@ export default function BillingPage() {
       }
 
       const { order, plan } = await res.json();
-      console.log("✅ Order created:", order.id);
 
-      // Configure Razorpay
       const options = {
-        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+        key: window.RAZORPAY_KEY_ID,
         order_id: order.id,
         amount: order.amount,
         currency: "INR",
         name: "Devsync",
         description: `${plan.name} - ${plan.credits} Credits`,
         image: "/logo.png",
-
+        config: {
+    display: {
+      blocks: {
+        upi: {
+          name: "Pay via UPI",
+          instruments: [
+            { method: "upi" }
+          ]
+        },
+        cards: {
+          name: "Pay via Card",
+          instruments: [
+            { method: "card" }
+          ]
+        }
+      },
+      sequence: ["block.upi", "block.cards"],
+      preferences: {
+        show_default_blocks: false
+      }
+    }
+  },
         handler: async (response: any) => {
-          console.log("💳 Payment completed, verifying...");
-          
           try {
             const verifyRes = await fetch("/api/billing/verify", {
               method: "POST",
@@ -126,53 +134,43 @@ export default function BillingPage() {
             });
 
             const verifyData = await verifyRes.json();
-            console.log("📥 Verification response:", verifyData);
 
             if (!verifyRes.ok) {
               throw new Error(verifyData.error || "Verification failed");
             }
 
             if (verifyData.success) {
-              toast.success(`✅ ${verifyData.credits} credits added successfully!`);
-              
-              // Refresh credits
+              toast.success(`${verifyData.credits} credits added successfully!`);
               await fetchCredits();
             } else {
               toast.error(verifyData.error || "Payment verification failed");
             }
           } catch (error: any) {
-            console.error("❌ Verification error:", error);
             toast.error(error.message || "Failed to verify payment");
           } finally {
             setPurchasingPlanId(null);
           }
         },
-
         modal: {
           ondismiss: () => {
-            console.log("❌ Payment cancelled by user");
             toast.info("Payment cancelled");
             setPurchasingPlanId(null);
           },
         },
-
         theme: {
           color: "#3b82f6",
         },
       };
 
-      console.log("🚀 Opening Razorpay checkout...");
       const rzp = new window.Razorpay(options);
-      
+
       rzp.on("payment.failed", (response: any) => {
-        console.error("❌ Payment failed:", response.error);
         toast.error(`Payment failed: ${response.error.description}`);
         setPurchasingPlanId(null);
       });
 
       rzp.open();
     } catch (error: any) {
-      console.error("❌ Purchase error:", error);
       toast.error(error.message || "Failed to initiate payment");
       setPurchasingPlanId(null);
     }
@@ -197,20 +195,18 @@ export default function BillingPage() {
 
   return (
     <>
-      <Script 
+      <Script
         src="https://checkout.razorpay.com/v1/checkout.js"
         onLoad={() => {
-          console.log("✅ Razorpay script loaded");
+          (window as any).RAZORPAY_KEY_ID = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
           setRazorpayLoaded(true);
         }}
         onError={() => {
-          console.error("❌ Failed to load Razorpay script");
           toast.error("Failed to load payment gateway");
         }}
       />
 
       <div className="max-w-6xl mx-auto px-3 sm:px-6 py-5 sm:py-8 space-y-6">
-        {/* Header */}
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
             <Zap className="h-6 w-6 text-primary" />
@@ -221,7 +217,6 @@ export default function BillingPage() {
           </p>
         </div>
 
-        {/* Stats */}
         <div className="grid gap-4 md:grid-cols-3">
           <Card>
             <CardHeader>
@@ -261,15 +256,25 @@ export default function BillingPage() {
           </Card>
         </div>
 
-        {/* Credit usage costs */}
         <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-muted-foreground border rounded-md px-3 py-2">
           <span className="font-medium text-foreground">Credit costs - </span>
-          <span><Badge variant="default" className="bg-amber-300">New Project: 50</Badge></span>
-          <span><Badge variant="default" className="bg-amber-300">Q&A: 5</Badge></span>
-          <span><Badge variant="default" className="bg-amber-300">Meeting Issues: 20</Badge></span>
+          <span>
+            <Badge variant="default" className="bg-amber-300">
+              New Project: 50
+            </Badge>
+          </span>
+          <span>
+            <Badge variant="default" className="bg-amber-300">
+              Q&A: 5
+            </Badge>
+          </span>
+          <span>
+            <Badge variant="default" className="bg-amber-300">
+              Meeting Issues: 20
+            </Badge>
+          </span>
         </div>
 
-        {/* Buy Credits Plans */}
         <div>
           <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-primary" />
@@ -343,7 +348,6 @@ export default function BillingPage() {
           </div>
         </div>
 
-        {/* Recent Activity */}
         {history.length > 0 && (
           <Card>
             <CardHeader>
