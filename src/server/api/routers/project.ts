@@ -1,68 +1,97 @@
-import { pollCommits } from "@/lib/github"
-import { createTRPCRouter, protectedProcedure } from "../trpc"
-import { z } from "zod"
-import { indexGithubRepo } from "@/lib/github-loader"
-import { consumeCredits } from "@/lib/credit-service"
-import { db } from "@/server/db"
+import { z } from "zod";
+import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { db } from "@/server/db";
+import { indexGithubRepo } from "@/lib/github-loader";
+import { pollCommits } from "@/lib/github";
+import { consumeCredits } from "@/lib/credit-service";
 
 export const projectRouter = createTRPCRouter({
-
-
   createProject: protectedProcedure
     .input(
       z.object({
-        name: z.string().min(1, "Project name is required"),
-        githubUrl: z.string().url("Invalid GitHub URL"),
+        name: z.string().min(1),
+        githubUrl: z.string().url(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const userId = ctx.userId
+      const userId = ctx.userId;
 
-      let user = await ctx.db.user.findUnique({
+      // Ensure user exists
+      let user = await db.user.findUnique({
         where: { id: userId },
-      })
+      });
 
       if (!user) {
-        user = await ctx.db.user.create({
+        user = await db.user.create({
           data: {
             id: userId,
             emailAddress: "",
             credits: 100,
           },
-        })
+        });
       }
 
-      await db.user.create({
-  data: {
-    id: userId,
-    emailAddress: "",
-  },
-});
+      const project = await db.project.create({
+        data: {
+          name: input.name,
+          githubUrl: input.githubUrl,
+          UserToProjects: {
+            create: { userId },
+          },
+        },
+      });
 
-
-      const project = await ctx.db.project.create({
-  data: {
-    name: input.name,
-    githubUrl: input.githubUrl,
-    UserToProjects: {
-      create: { userId },
-    },
-  },
-});
-
-await consumeCredits(
-  userId,
-  "NEW_PROJECT",
-  project.id,
-  `Created project: ${input.name}`
-);
-
+      await consumeCredits(
+        userId,
+        "NEW_PROJECT",
+        project.id,
+        `Created project: ${input.name}`
+      );
 
       indexGithubRepo(project.id, input.githubUrl)
         .then(() => pollCommits(project.id))
-        .catch(console.error)
+        .catch(console.error);
 
-      return project
+      return project;
+    }),
+
+  getProjects: protectedProcedure.query(async ({ ctx }) => {
+    return db.project.findMany({
+      where: {
+        UserToProjects: { some: { userId: ctx.userId } },
+        deletedAt: null,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  }),
+
+  getCommits: protectedProcedure
+    .input(z.object({ projectId: z.string() }))
+    .query(async ({ input }) => {
+      pollCommits(input.projectId).catch(console.error);
+
+      return db.commit.findMany({
+        where: { projectId: input.projectId },
+        orderBy: { commitDate: "desc" },
+      });
+    }),
+
+  archiveProject: protectedProcedure
+    .input(z.object({ projectId: z.string() }))
+    .mutation(async ({ input }) => {
+      return db.project.update({
+        where: { id: input.projectId },
+        data: { deletedAt: new Date() },
+      });
+    }),
+
+  getTeamMembers: protectedProcedure
+    .input(z.object({ projectId: z.string() }))
+    .query(async ({ input }) => {
+      return db.userToProject.findMany({
+        where: { projectId: input.projectId },
+        include: { user: true },
+      });
     }),
 
   saveAnswer: protectedProcedure
@@ -70,7 +99,7 @@ await consumeCredits(
       z.object({
         projectId: z.string(),
         question: z.string(),
-        answer: z.string(), 
+        answer: z.string(),
         filesReferences: z.array(
           z.object({
             fileName: z.string(),
@@ -82,73 +111,33 @@ await consumeCredits(
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { projectId, question, answer, filesReferences } = input
-
-      return ctx.db.question.create({
+      return db.question.create({
         data: {
-          projectId,
-          question,
-          answer,
-          filesReferences,
+          projectId: input.projectId,
+          question: input.question,
+          answer: input.answer,
+          filesReferences: input.filesReferences,
           userId: ctx.userId,
         },
-      })
+      });
     }),
 
   getQuestions: protectedProcedure
     .input(z.object({ projectId: z.string() }))
-    .query(async ({ ctx, input }) => {
-      return ctx.db.question.findMany({
+    .query(async ({ input }) => {
+      return db.question.findMany({
         where: { projectId: input.projectId },
-        include: { user: true },
         orderBy: { createdAt: "desc" },
-      })
+        include: { user: true },
+      });
     }),
 
   deleteQuestion: protectedProcedure
     .input(z.object({ questionId: z.string() }))
-    .mutation(async ({ ctx, input }) => {
-      return ctx.db.question.delete({
+    .mutation(async ({ input }) => {
+      return db.question.delete({
         where: { id: input.questionId },
-      })
+      });
     }),
-
-  getProjects: protectedProcedure.query(async ({ ctx }) => {
-    return ctx.db.project.findMany({
-      where: {
-        UserToProjects: { some: { userId: ctx.userId } },
-        deletedAt: null,
-      },
-    })
-  }),
-
-  getCommits: protectedProcedure
-    .input(z.object({ projectId: z.string() }))
-    .query(async ({ ctx, input }) => {
-      pollCommits(input.projectId).catch(console.error)
-
-      return ctx.db.commit.findMany({
-        where: { projectId: input.projectId },
-        orderBy: { commitDate: "desc" },
-      })
-    }),
-
-  archiveProject: protectedProcedure
-    .input(z.object({ projectId: z.string() }))
-    .mutation(async ({ ctx, input }) => {
-      return ctx.db.project.update({
-        where: { id: input.projectId },
-        data: { deletedAt: new Date() },
-      })
-    }),
-
-  getTeamMembers: protectedProcedure
-    .input(z.object({ projectId: z.string() }))
-    .query(async ({ ctx, input }) => {
-      return ctx.db.userToProject.findMany({
-        where: { projectId: input.projectId },
-        include: { user: true },
-      })
-    }),
-})
+});
 
