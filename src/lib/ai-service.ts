@@ -10,15 +10,18 @@ export const AI_MODELS = {
   PRIMARY: "llama-3.1-8b-instant",
 } as const
 
-
 function truncate(text: string, maxChars: number) {
   if (!text) return ""
   return text.length > maxChars ? text.slice(0, maxChars) : text
 }
 
-//prompts
-const COMMIT_SYSTEM_PROMPT =
-  "Answer questions about git commits using ONLY the provided commit summaries. Mention commit hashes. If unknown, say: Not found in commit history."
+// FIXED: More explicit system prompt to prevent preambles
+const COMMIT_SYSTEM_PROMPT = `You are a git diff summarizer. Output ONLY a bulleted list (max 3 bullets) of what changed. NO preambles, NO explanations, NO "Here are the changes" text. Start directly with bullets.
+
+Example output:
+• Added user authentication with JWT
+• Refactored database connection pooling
+• Fixed memory leak in image processing`
 
 const CODE_SYSTEM_PROMPT =
   "Summarize code behavior in 2–3 concise technical sentences."
@@ -29,7 +32,7 @@ const CODE_QA_SYSTEM_PROMPT =
   "Do NOT say 'not found' if any match exists. " +
   "Say 'Not found in the codebase' ONLY if there are zero matches."
 
-//commit summary
+// FIXED: Enhanced commit summary with stricter output control
 export async function aiSummariseCommit(diff: string): Promise<string> {
   if (!diff || diff.length < 20) return "No significant changes."
 
@@ -40,7 +43,7 @@ export async function aiSummariseCommit(diff: string): Promise<string> {
       groq.chat.completions.create({
         model: AI_MODELS.PRIMARY,
         messages: [
-          { role: "system", content: "Summarize git diff. Max 3 bullets. WHAT changed only." },
+          { role: "system", content: COMMIT_SYSTEM_PROMPT },
           { role: "user", content: truncatedDiff },
         ],
         temperature: 0,
@@ -48,13 +51,21 @@ export async function aiSummariseCommit(diff: string): Promise<string> {
       })
     )
 
-    return resp.choices[0]?.message?.content?.trim() ?? "No significant changes."
+    let summary = resp.choices[0]?.message?.content?.trim() ?? ""
+    
+    // FIXED: Strip common preambles if AI ignores instructions
+    summary = summary
+      .replace(/^(here are (the changes?|what changed)|changes made|summary):\s*/i, "")
+      .replace(/^in \d+ bullets?:\s*/i, "")
+      .trim()
+
+    return summary || "No significant changes."
   } catch {
     return "Summary unavailable due to rate limits."
   }
 }
 
-//code summary
+// Code summary (unchanged)
 export async function summariseCode(doc: Document): Promise<string> {
   const code = truncate(String(doc.pageContent ?? ""), 2500)
   if (code.length < 50) return "Minimal or non-functional code."
@@ -78,7 +89,7 @@ export async function summariseCode(doc: Document): Promise<string> {
   }
 }
 
-//qa
+// QA functions (unchanged)
 export async function generateCodeQAResponse(
   context: string,
   question: string
@@ -109,7 +120,6 @@ export async function generateCodeQAResponse(
   }
 }
 
-//commit qa
 export async function generateCommitQAResponse(
   context: string,
   question: string
@@ -119,7 +129,10 @@ export async function generateCommitQAResponse(
       groq.chat.completions.create({
         model: AI_MODELS.PRIMARY,
         messages: [
-          { role: "system", content: COMMIT_SYSTEM_PROMPT },
+          { 
+            role: "system", 
+            content: "Answer questions about git commits using ONLY the provided commit summaries. Mention commit hashes. If unknown, say: Not found in commit history." 
+          },
           {
             role: "user",
             content: `COMMITS:\n${truncate(context, 6000)}\n\nQUESTION:\n${truncate(question, 300)}`,

@@ -50,8 +50,6 @@ async function fetchDiff(githubUrl: string, hash: string): Promise<string> {
   }
 }
 
-//commit list
-
 export async function getCommitHashes(
   githubUrl: string
 ): Promise<CommitResponse[]> {
@@ -78,19 +76,28 @@ async function getPendingCommits(
 ) {
   const existing = await db.commit.findMany({
     where: { projectId },
-    select: { commitHash: true, summary: true },
+    select: { commitHash: true, summary: true, retryCount: true },
   });
 
-  const completed = new Set(
-    existing
-      .filter((c) => c.summary && !c.summary.startsWith("Pending"))
-      .map((c) => c.commitHash)
-  );
+  const completed = new Set<string>();
+
+  for (const c of existing) {
+    const hasValidSummary =
+      c.summary &&
+      c.summary.trim() !== "" &&
+      c.summary !== "Pending" &&
+      !c.summary.startsWith("No significant") &&
+      !c.summary.includes("Summary unavailable");
+
+    const maxRetriesReached = (c.retryCount || 0) >= 3;
+
+    if (hasValidSummary || maxRetriesReached) {
+      completed.add(c.commitHash);
+    }
+  }
 
   return commits.filter((c) => !completed.has(c.commitHash));
 }
-
-//polling commits
 
 export async function pollCommits(projectId: string) {
   try {
@@ -105,15 +112,12 @@ export async function pollCommits(projectId: string) {
     const pending = await getPendingCommits(projectId, commits);
 
     if (pending.length === 0) {
-      console.log("No pending commits");
       return [];
     }
 
     const processed: { commitHash: string }[] = [];
 
     for (const commit of pending) {
-      console.log(`Processing commit ${commit.commitHash.slice(0, 7)}`);
-
       let row = await db.commit.findFirst({
         where: { projectId, commitHash: commit.commitHash },
       });
@@ -132,7 +136,21 @@ export async function pollCommits(projectId: string) {
         });
       }
 
-      if (row.summary && row.summary !== "Pending") continue;
+      const currentRetries = row.retryCount || 0;
+
+      if (currentRetries >= 3) {
+        continue;
+      }
+
+      if (
+        row.summary &&
+        row.summary !== "Pending" &&
+        !row.summary.startsWith("No significant") &&
+        !row.summary.includes("Summary unavailable") &&
+        !row.summary.includes("failed due to rate limits")
+      ) {
+        continue;
+      }
 
       const diff = await fetchDiff(project.githubUrl, commit.commitHash);
 
@@ -153,20 +171,31 @@ export async function pollCommits(projectId: string) {
           where: { id: row.id },
           data: {
             summary: summary || "Minor refactor / formatting changes.",
+            retryCount: 0,
           },
         });
 
         processed.push({ commitHash: commit.commitHash });
       } catch (err: any) {
-        console.error("Commit summary failed:", err.message);
+        console.error(
+          `Summary failed for ${commit.commitHash.slice(0, 7)}:`,
+          err.message
+        );
+
+        const newRetryCount = (row.retryCount || 0) + 1;
 
         await db.commit.update({
           where: { id: row.id },
-          data: { summary: "Pending" },
+          data: {
+            summary:
+              newRetryCount >= 3
+                ? "Summary generation permanently failed after 3 attempts."
+                : `Summary generation failed (attempt ${newRetryCount}/3). Will retry.`,
+            retryCount: newRetryCount,
+          },
         });
       }
 
-      // throttle
       await new Promise((r) => setTimeout(r, 2000));
     }
 
@@ -176,3 +205,5 @@ export async function pollCommits(projectId: string) {
     return [];
   }
 }
+
+

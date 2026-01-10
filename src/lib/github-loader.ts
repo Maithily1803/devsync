@@ -68,7 +68,7 @@ async function generateEmbeddingsOptimized(
   projectId: string
 ): Promise<PreparedEmbedding[]> {
   const results: PreparedEmbedding[] = [];
-  const BATCH_SIZE = 5;
+  const BATCH_SIZE = 3;
 
   for (let i = 0; i < docs.length; i += BATCH_SIZE) {
     const batch = docs.slice(i, i + BATCH_SIZE);
