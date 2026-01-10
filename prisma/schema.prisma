@@ -12,21 +12,19 @@ datasource db {
 }
 
 model User {
-  id               String           @id
-  emailAddress     String           @unique
-  firstName        String?
-  lastName         String?
-  imageUrl         String?
-  credits          Int              @default(100)
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
-  
-  UserToProjects   UserToProject[]
-  questions        Question[]
-  payments         Payment[]
-  creditUsages     CreditUsage[]   
+  id             String          @id
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  imageUrl       String?
+  firstName      String?
+  lastName       String?
+  emailAddress   String          @unique
+  credits        Int             @default(100)
+  creditUsages   CreditUsage[]
+  payments       Payment[]
+  questions      Question[]
+  UserToProjects UserToProject[]
 }
-
 
 model Project {
   id                   String                @id @default(cuid())
@@ -37,11 +35,11 @@ model Project {
   githubToken          String?
   deletedAt            DateTime?
   commits              Commit[]
+  creditUsages         CreditUsage[]
+  meetings             Meeting[]
+  savedQuestions       Question[]
   sourceCodeEmbeddings SourceCodeEmbedding[]
   UserToProjects       UserToProject[]
-  savedQuestions       Question[]
-  meetings             Meeting[]
-  creditUsages         CreditUsage[]   
 }
 
 model UserToProject {
@@ -58,36 +56,28 @@ model UserToProject {
 
 model SourceCodeEmbedding {
   id               String                 @id @default(cuid())
-  summaryEmbedding Unsupported("vector(1536)")?
+  summaryEmbedding Unsupported("vector")?
   sourceCode       String
   fileName         String
   summary          String
   projectId        String
   project          Project                @relation(fields: [projectId], references: [id])
+
   @@unique([projectId, fileName], name: "projectId_fileName")
 }
 
-
 model Question {
-  id                 String   @id @default(cuid())
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-
-  question           String
-  answer             String
-
+  id              String   @id @default(cuid())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  question        String
+  answer          String
   filesReferences Json?
-
-  projectId         String
-  project           Project @relation(fields: [projectId], references: [id])
-
-  userId            String
-  user              User    @relation(fields: [userId], references: [id])
+  projectId       String
+  userId          String
+  project         Project  @relation(fields: [projectId], references: [id])
+  user            User     @relation(fields: [userId], references: [id])
 }
-
-
-
-
 
 model Commit {
   id                 String   @id @default(cuid())
@@ -99,43 +89,39 @@ model Commit {
   commitAuthorName   String
   commitAuthorAvatar String
   commitDate         DateTime
-  summary           String   @default("")
+  summary            String   @default("")
+  retryCount         Int      @default(0)
   project            Project  @relation(fields: [projectId], references: [id])
 }
 
-
-
-
 model Meeting {
-  id            String   @id @default(cuid())
-  name          String
-  projectId     String
-  audioUrl      String
-  transcript    String?
-  status        String   @default("processing")
-  assemblyaiId  String?  @unique
-  issues        Json?    // Add this field
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  project       Project  @relation(fields: [projectId], references: [id])
+  id           String   @id @default(cuid())
+  name         String
+  projectId    String
+  audioUrl     String
+  transcript   String?
+  status       String   @default("processing")
+  assemblyaiId String?  @unique
+  issues       Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  project      Project  @relation(fields: [projectId], references: [id])
 
   @@index([projectId])
 }
 
 model Payment {
-  id              String   @id @default(cuid())
-  userId          String
-  amount          Int      // Amount in INR
-  credits         Int      // Credits purchased
-  razorpayOrder   String   @unique
-  razorpayPayId   String?
-  status          String   @default("created") // created, paid, failed
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+  id            String   @id @default(cuid())
+  userId        String
+  amount        Int
+  credits       Int
+  razorpayOrder String   @unique
+  razorpayPayId String?
+  status        String   @default("created")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([userId])
   @@index([status])
 }
@@ -144,14 +130,12 @@ model CreditUsage {
   id          String   @id @default(cuid())
   userId      String
   projectId   String?
-
   action      String
   credits     Int
   description String?
   createdAt   DateTime @default(now())
-
-  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project     Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([projectId])
