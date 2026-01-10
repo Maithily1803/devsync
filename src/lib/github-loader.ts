@@ -1,11 +1,10 @@
 import { GithubRepoLoader } from "@langchain/community/document_loaders/web/github";
 import { Document } from "@langchain/core/documents";
-import { generateEmbedding } from "@/lib/embeddings";
+import { generateEmbeddings } from "@/lib/embeddings";
 import { summariseCode } from "@/lib/ai-service";
 import { db } from "@/server/db";
 import pLimit from "p-limit";
 
-//url normalise url
 function normalizeGithubUrl(url: string): string {
   let normalized = url.replace(/\.git$/i, "");
 
@@ -22,7 +21,6 @@ function normalizeGithubUrl(url: string): string {
   return normalized;
 }
 
-//loading repo
 export async function loadGithubRepo(
   githubUrl: string
 ): Promise<Document[]> {
@@ -58,8 +56,6 @@ export async function loadGithubRepo(
   });
 }
 
-//embedding
-
 type PreparedEmbedding = {
   fileName: string;
   sourceCode: string;
@@ -67,89 +63,108 @@ type PreparedEmbedding = {
   embedding: number[];
 };
 
-async function generateEmbeddings(
+async function generateEmbeddingsOptimized(
   docs: Document[],
   projectId: string
 ): Promise<PreparedEmbedding[]> {
-  const limit = pLimit(1);
   const results: PreparedEmbedding[] = [];
+  const BATCH_SIZE = 5;
 
-  for (let i = 0; i < docs.length; i++) {
-    const doc = docs[i];
-    if (!doc) continue;
+  for (let i = 0; i < docs.length; i += BATCH_SIZE) {
+    const batch = docs.slice(i, i + BATCH_SIZE);
 
-    await limit(async () => {
-      const fileName = String(doc.metadata?.source ?? "");
-      const sourceCode = String(doc.pageContent ?? "");
+    try {
+      const cached = await Promise.all(
+        batch.map(async (doc) => {
+          const fileName = String(doc.metadata?.source ?? "");
+          const sourceCode = String(doc.pageContent ?? "");
 
-      // cache check
-      const existing = await db.sourceCodeEmbedding.findFirst({
-        where: { projectId, fileName, sourceCode },
-        select: { id: true, summary: true },
-      });
+          const existing = await db.sourceCodeEmbedding.findFirst({
+            where: { projectId, fileName, sourceCode },
+            select: { id: true, summary: true },
+          });
 
-      if (existing?.summary?.length) {
-        return;
+          return existing?.summary?.length ? existing : null;
+        })
+      );
+
+      const uncachedDocs = batch.filter((_, idx) => !cached[idx]);
+
+      if (uncachedDocs.length === 0) {
+        continue;
       }
 
-      const summary = await summariseCode(doc);
-      if (!summary) return;
+      const summaries = await Promise.all(
+        uncachedDocs.map((doc) => summariseCode(doc))
+      );
 
-      const embedding = await generateEmbedding(summary);
-      if (embedding.length !== 384) return;
+      const embeddings = await generateEmbeddings(summaries);
 
-      results.push({
-        fileName,
-        sourceCode,
-        summary,
-        embedding,
+      uncachedDocs.forEach((doc, idx) => {
+        if (embeddings[idx]?.length === 384) {
+          results.push({
+            fileName: String(doc.metadata?.source ?? ""),
+            sourceCode: String(doc.pageContent ?? ""),
+            summary: summaries[idx] || "",
+            embedding: embeddings[idx]!,
+          });
+        }
       });
-    });
+
+      if (i + BATCH_SIZE < docs.length) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+    } catch (error: any) {}
   }
 
   return results;
 }
 
-//indexing repo
 export async function indexGithubRepo(
   projectId: string,
   githubUrl: string
 ) {
   const docs = await loadGithubRepo(githubUrl);
-  if (!docs.length) return;
 
-  const prepared = await generateEmbeddings(docs, projectId);
-  if (!prepared.length) return;
+  if (!docs.length) {
+    return;
+  }
+
+  const prepared = await generateEmbeddingsOptimized(docs, projectId);
+
+  if (!prepared.length) {
+    return;
+  }
 
   for (const item of prepared) {
-    const record = await db.sourceCodeEmbedding.upsert({
-      where: {
-        projectId_fileName: {
+    try {
+      const record = await db.sourceCodeEmbedding.upsert({
+        where: {
+          projectId_fileName: {
+            projectId,
+            fileName: item.fileName,
+          },
+        },
+        update: {
+          summary: item.summary,
+          sourceCode: item.sourceCode,
+        },
+        create: {
           projectId,
           fileName: item.fileName,
+          sourceCode: item.sourceCode,
+          summary: item.summary,
         },
-      },
-      update: {
-        summary: item.summary,
-        sourceCode: item.sourceCode,
-      },
-      create: {
-        projectId,
-        fileName: item.fileName,
-        sourceCode: item.sourceCode,
-        summary: item.summary,
-      },
-    });
+      });
 
-    // vector must be written via raw SQL
-    const vector = `[${item.embedding.join(",")}]`;
+      const vector = `[${item.embedding.join(",")}]`;
 
-    await db.$executeRawUnsafe(`
-      UPDATE "SourceCodeEmbedding"
-      SET "summaryEmbedding" = '${vector}'::vector
-      WHERE "id" = '${record.id}'
-    `);
+      await db.$executeRawUnsafe(`
+        UPDATE "SourceCodeEmbedding"
+        SET "summaryEmbedding" = '${vector}'::vector
+        WHERE "id" = '${record.id}'
+      `);
+    } catch (error: any) {}
   }
 }
-
 
