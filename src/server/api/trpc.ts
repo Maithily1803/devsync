@@ -81,7 +81,7 @@ export const createTRPCRouter = t.router;
  */
 
 const isAuthenticated = t.middleware(async ({ next, ctx }) => {
-  const { userId } = await auth();
+  const userId = ctx.headers.get("x-clerk-user-id");
 
   if (!userId) {
     throw new TRPCError({

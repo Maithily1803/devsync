@@ -1,0 +1,13 @@
+{
+  "buildCommand": "prisma generate && prisma migrate deploy && next build",
+  "framework": "nextjs",
+  "regions": ["bom1"],
+  "functions": {
+    "app/api/**/*.ts": {
+      "maxDuration": 60
+    }
+  },
+  "env": {
+    "ENABLE_EXPERIMENTAL_COREPACK": "1"
+  }
+}
