@@ -1,20 +1,33 @@
-# [![Typing SVG](https://readme-typing-svg.demolab.com?font=Londrina+Shadow&size=35&pause=1000&color=F7A909&width=435&lines=DevSync+-+AI+GitHub+SaaS)](https://git.io/typing-svg)
+# [![Typing SVG](https://readme-typing-svg.demolab.com?font=Londrina+Shadow&size=50&pause=1000&color=F7A909&width=500&height=100&lines=DevSync+-+AI+GitHub+SaaS)](https://git.io/typing-svg)
 
 **`Search your code. Understand your meetings. Instantly.`**
 
 
-## 🖼️ Product Preview
+## Preview
+### Dashboard 
+![Devsync Dashboard](public/screenshots/hero/dashboard-overview.png)
 
-![DevSync Demo Screenshot](./screenshot.png)
+### AI-Powered Q&A
+<div align="center">
+  <img src="public/screenshots/features/ai-qa-demo.png" width="80%" alt="AI Q&A Demo">
+</div>
 
-*AI-generated insights from real project data.*
+### Meeting Intelligence
+<table>
+  <tr>
+    <td><img src="public/screenshots/features/meeting-upload.png" alt="Upload"></td>
+    <td><img src="public/screenshots/features/meeting-processing.png" alt="Processing"></td>
+    <td><img src="public/screenshots/features/meeting-results.png" alt="Results"></td>
+  </tr>
+</table>
 
+### Code References
+![Syntax Highlighted Code](public/screenshots/features/code-references.png)
 
-🚀 **Live Demo:** https://your-demo-link.com  
 🎥 **Demo Video:** https://your-video-link.com  
 
 ---
-## ⚙️ What It Can Do
+## ⚙️ Key Features
 
 - **`Q&A`**  
   Ask questions about your codebase and get instant, context-aware answers with file references.
@@ -41,14 +54,23 @@
   <img src="https://img.shields.io/badge/Groq-282C34?style=for-the-badge&logo=lightning&logoColor=red" />
   <img src="https://img.shields.io/badge/AssemblyAI-282C34?style=for-the-badge&logo=waveform&logoColor=white" />
   <img src="https://img.shields.io/badge/LangChain-282C34?style=for-the-badge&logo=chainlink&logoColor=32686B" />
-  <img src="https://img.shields.io/badge/Xenova%20Transformers-282C34?style=for-the-badge&logo=pytorch&logoColor=EE4C2C" />
+  <img src="https://img.shields.io/badge/Voyage%20AI-282C34?style=for-the-badge&logo=ai&logoColor=white" />
   <img src="https://img.shields.io/badge/Razorpay-282C34?style=for-the-badge&logo=razorpay&logoColor=2C4471" />
   <img src="https://img.shields.io/badge/Vercel-282C34?style=for-the-badge&logo=vercel&logoColor=white" />
 </p>
 
+<details>
+<summary><strong>How it works</strong></summary>
+<br/>
+### 1. Architecture
+<img src="./architecture.png" alt="DevSync Architecture Diagram" width="100%" />
+### 2. Workflow
+<img src="./flow.png" alt="DevSync Processing Flow" width="100%" />
+<br/>
+</details>
 
-## ⭐ Get Started
 
-Clone the repo, explore the demo, and see how AI can organize your team’s knowledge.
 
-If this project helped you, consider starring the repo ⭐
+## Explore DevSync. See the intelligence. ⭐ if it helps.
+**`Made with ❤️ and ☕`**
+
