@@ -33,18 +33,19 @@ async function voyageEmbed(inputs: string[]): Promise<number[][]> {
 
 export async function generateEmbedding(text: string): Promise<number[]> {
   if (!text || text.trim().length < 10) {
+    console.warn("Text too short for embedding");
     return [];
   }
 
   try {
     const truncated = text.slice(0, 8000);
-
     const [vector] = await voyageEmbed([truncated]);
 
     if (!vector || vector.length !== DIMENSIONS) {
       throw new Error(`Expected ${DIMENSIONS} dims, got ${vector?.length}`);
     }
 
+    console.log(`Generated ${vector.length}-d embedding`);
     return vector;
   } catch (error: any) {
     console.error("Embedding generation failed:", error.message);
@@ -53,17 +54,15 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 }
 
 export async function generateEmbeddings(texts: string[]): Promise<number[][]> {
-  if (!texts || texts.length === 0) {
-    return [];
-  }
+  if (!texts || texts.length === 0) return [];
 
   try {
     const truncated = texts.map(t => t.slice(0, 8000));
-
     const vectors = await voyageEmbed(truncated);
 
-    return vectors.map(v => {
+    return vectors.map((v, idx) => {
       if (!v || v.length !== DIMENSIONS) {
+        console.warn(`Invalid embedding for text ${idx}, using zero vector`);
         return new Array(DIMENSIONS).fill(0);
       }
       return v;
@@ -71,24 +70,5 @@ export async function generateEmbeddings(texts: string[]): Promise<number[][]> {
   } catch (error: any) {
     console.error("Batch embedding failed:", error.message);
     return texts.map(() => new Array(DIMENSIONS).fill(0));
-  }
-}
-
-export async function testEmbeddings(): Promise<void> {
-  console.log("Testing Voyage embeddings...");
-
-  const text = "export function authenticate(req: Request) { return true; }";
-
-  const embedding = await generateEmbedding(text);
-
-  console.log(`
-Embedding test passed!
-  - Dimensions: ${embedding.length}
-  - Sample: [${embedding.slice(0, 5).map(n => n.toFixed(4)).join(", ")}...]
-  - Model: ${MODEL}
-  `);
-
-  if (embedding.length !== DIMENSIONS) {
-    throw new Error("Dimension mismatch");
   }
 }

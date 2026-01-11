@@ -1,7 +1,7 @@
 import Razorpay from "razorpay";
 import { NextResponse } from "next/server";
 import { db } from "@/server/db";
-import { auth } from "@clerk/nextjs/server";
+import { auth, clerkClient } from "@clerk/nextjs/server";
 import { CREDIT_PLANS } from "@/lib/credit-plans";
 
 if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     const { userId } = await auth();
 
     if (!userId) {
-      console.error(" No userId found");
+      console.error("No userId found");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -38,24 +38,56 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid plan" }, { status: 400 });
     }
 
-    console.log("Plan found:", plan.name, "-", plan.credits, "credits");
+    console.log(`Plan found: ${plan.name} - ${plan.credits} credits`);
 
     console.log("Checking user existence...");
     const existingUser = await db.user.findUnique({
       where: { id: userId },
     });
 
-    await db.user.create({
-  data: {
-    id: userId,
-    emailAddress: "",
-  },
-});
+    if (!existingUser) {
+      console.log("User not found in DB, creating...");
+      
+      try {
+        const client = await clerkClient();
+        const clerkUser = await client.users.getUser(userId);
+        
+        const email = clerkUser.emailAddresses[0]?.emailAddress;
+        
+        if (!email) {
+          console.error("No email found for user");
+          return NextResponse.json(
+            { error: "User email not found" },
+            { status: 400 }
+          );
+        }
 
+        await db.user.create({
+          data: {
+            id: userId,
+            emailAddress: email,
+            imageUrl: clerkUser.imageUrl,
+            firstName: clerkUser.firstName,
+            lastName: clerkUser.lastName,
+            credits: 100,
+          },
+        });
 
-    console.log("💳 Creating Razorpay order...");
+        console.log("User created successfully");
+      } catch (createError: any) {
+        console.error("Failed to create user:", createError.message);
+        return NextResponse.json(
+          { error: "Failed to initialize user account" },
+          { status: 500 }
+        );
+      }
+    } else {
+      console.log("User exists in DB");
+    }
+
+    console.log("Creating Razorpay order...");
     const order = await razorpay.orders.create({
-      amount: plan.price * 100, 
+      amount: plan.price * 100,
       currency: "INR",
       receipt: `order_${Date.now()}`,
       notes: {

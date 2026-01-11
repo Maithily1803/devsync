@@ -6,7 +6,7 @@ import {
 } from "@/lib/ai-service"
 import { db } from "@/server/db"
 import { auth } from "@clerk/nextjs/server"
-import { consumeCredits } from "@/lib/credit-service"
+import { consumeCredits, InsufficientCreditsError } from "@/lib/credit-service"
 
 function isCommitQuestion(question: string) {
   const q = question.toLowerCase()
@@ -38,23 +38,28 @@ export async function askQuestion(
 }> {
   console.log("Question:", question)
 
-//auth
-
   const { userId } = await auth()
   if (!userId) {
     return { answer: "You must be logged in.", filesReferences: [] }
   }
 
-//credits
-
-  await consumeCredits(
-    userId,
-    "QUESTION_ASKED",
-    projectId,
-    question.slice(0, 50)
-  )
-
-//commit quest
+  try {
+    await consumeCredits(
+      userId,
+      "QUESTION_ASKED",
+      projectId,
+      question.slice(0, 50)
+    )
+    console.log("Credits deducted")
+  } catch (error: any) {
+    if (error instanceof InsufficientCreditsError) {
+      return {
+        answer: "Insufficient credits. Please purchase more!",
+        filesReferences: [],
+      }
+    }
+    throw error
+  }
 
   if (isCommitQuestion(question)) {
     const commits = await db.commit.findMany({
@@ -92,54 +97,67 @@ ${c.summary}
     }
   }
 
-//code quest
-
-  const queryVector = await generateEmbedding(question)
-  if (!queryVector.length) {
-    return {
-      answer: "Unable to process this question.",
-      filesReferences: [],
+  try {
+    const queryVector = await generateEmbedding(question)
+    
+    if (!queryVector.length || queryVector.length !== 1536) {
+      console.error("Invalid embedding dimensions:", queryVector.length)
+      return {
+        answer: "Unable to process this question.",
+        filesReferences: [],
+      }
     }
-  }
 
-  const vectorQuery = `[${queryVector.join(",")}]`
+    const vectorQuery = `[${queryVector.join(",")}]`
 
-  const files = (await db.$queryRaw`
-    SELECT
-      "fileName",
-      "sourceCode",
-      "summary",
-      1 - ("summaryEmbedding" <=> ${vectorQuery}::vector) AS similarity
-    FROM "SourceCodeEmbedding"
-    WHERE "projectId" = ${projectId}
-      AND 1 - ("summaryEmbedding" <=> ${vectorQuery}::vector) > 0.25
-    ORDER BY similarity DESC
-    LIMIT 6
-  `) as any[]
+    console.log("Searching codebase...")
+    
+    const files = (await db.$queryRaw`
+      SELECT
+        "fileName",
+        "sourceCode",
+        "summary",
+        1 - ("summaryEmbedding" <=> ${vectorQuery}::vector) AS similarity
+      FROM "SourceCodeEmbedding"
+      WHERE "projectId" = ${projectId}
+        AND 1 - ("summaryEmbedding" <=> ${vectorQuery}::vector) > 0.25
+      ORDER BY similarity DESC
+      LIMIT 6
+    `) as any[]
 
-  if (!files.length) {
-    return {
-      answer: "Not found in the codebase.",
-      filesReferences: [],
+    if (!files.length) {
+      return {
+        answer: "Not found in the codebase.",
+        filesReferences: [],
+      }
     }
-  }
 
-  const context = files
-    .map(
-      (f) => `
+    console.log(`Found ${files.length} relevant files`)
+
+    const context = files
+      .map(
+        (f) => `
 FILE: ${f.fileName}
 
 ${truncateCode(f.sourceCode)}
 `.trim()
-    )
-    .join("\n\n----------------\n\n")
+      )
+      .join("\n\n----------------\n\n")
 
-  const answer = await generateCodeQAResponse(context, question)
+    const answer = await generateCodeQAResponse(context, question)
 
-  return {
-    answer,
-    filesReferences: files,
+    return {
+      answer,
+      filesReferences: files,
+    }
+  } catch (error: any) {
+    console.error("Q&A failed:", error.message)
+    return {
+      answer: "Failed to answer question.",
+      filesReferences: [],
+    }
   }
 }
+
 
 

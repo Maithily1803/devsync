@@ -31,6 +31,7 @@ export async function POST(req: Request) {
         id: true, 
         name: true, 
         projectId: true,
+        status: true,
         project: {
           select: {
             UserToProjects: {
@@ -48,20 +49,24 @@ export async function POST(req: Request) {
     }
 
     console.log("Meeting found:", meeting.id);
-    console.log("Project ID:", meeting.projectId);
 
     const userId = meeting.project.UserToProjects[0]?.userId;
     console.log("User ID:", userId);
 
     if (!userId) {
-      console.error("No user ID found for this project!");
-
+      console.error("No user ID found for this project");
     }
+
     if (status === "completed") {
+      if (meeting.status === "completed") {
+        console.log("Meeting already processed, skipping");
+        return NextResponse.json({ received: true, message: "Already processed" });
+      }
+
       let finalText = text;
 
       if (!finalText) {
-        console.log("Fetching transcript from AssemblyAI...");
+        console.log("Fetching transcript from AssemblyAI");
         const res = await axios.get(
           `https://api.assemblyai.com/v2/transcript/${id}`,
           { headers: { authorization: process.env.ASSEMBLYAI_API_KEY! } }
@@ -78,23 +83,20 @@ export async function POST(req: Request) {
         return NextResponse.json({ received: true });
       }
 
-      console.log(`Transcript: ${finalText.length} chars`);
+      console.log(`Transcript length: ${finalText.length}`);
 
-      console.log("Generating issues...");
+      console.log("Generating issues");
       let issues: any[] = [];
       
       try {
         issues = await generateIssuesFromTranscript(finalText, meeting.name);
         console.log(`Generated ${issues.length} issues`);
       } catch (err: any) {
-        console.error(" Issue generation failed:", err.message);
-
+        console.error("Issue generation failed:", err.message);
       }
+
       if (issues.length > 0 && userId) {
-        console.log("Attempting to deduct credits...");
-        console.log("User ID:", userId);
-        console.log("Project ID:", meeting.projectId);
-        console.log("Issues count:", issues.length);
+        console.log("Attempting to deduct credits");
         
         try {
           const result = await consumeCredits(
@@ -104,13 +106,10 @@ export async function POST(req: Request) {
             `Generated ${issues.length} issues from: ${meeting.name.slice(0, 30)}...`
           );
           
-          console.log("Credits deducted successfully!");
-          console.log("Remaining credits:", result.remaining);
+          console.log("Credits deducted successfully");
+          console.log(`Remaining credits: ${result.remaining}`);
         } catch (creditError: any) {
           console.error("Credit deduction FAILED:", creditError.message);
-          console.error("Error name:", creditError.name);
-          console.error("Full error:", creditError);
-
         }
       } else {
         if (issues.length === 0) {
@@ -121,8 +120,7 @@ export async function POST(req: Request) {
         }
       }
 
-  
-      console.log("Updating meeting in database...");
+      console.log("Updating meeting in database");
       await db.meeting.update({
         where: { id: meeting.id },
         data: {
@@ -133,7 +131,6 @@ export async function POST(req: Request) {
       });
 
       console.log("Meeting saved successfully");
-      console.log("Webhook processed successfully");
     }
 
     if (status === "error") {
@@ -149,7 +146,7 @@ export async function POST(req: Request) {
 
   } catch (error: any) {
     console.error("Webhook error:", error.message);
-    console.error("Full error:", error);
+    console.error("Stack:", error.stack);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }

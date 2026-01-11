@@ -60,11 +60,10 @@ export async function GET(
 
         if (asmRes.ok) {
           const asmData = await asmRes.json();
-
           console.log("AssemblyAI status:", asmData.status);
 
           if (asmData.status === "completed" && asmData.text) {
-            console.log("Transcript ready, generating issues...");
+            console.log("Transcript ready, generating issues");
             
             let issues: any[] = [];
             
@@ -78,15 +77,17 @@ export async function GET(
               console.error("Issue generation failed:", err.message);
             }
 
-            if (issues.length > 0) {
+            const currentMeeting = await db.meeting.findUnique({
+              where: { id: meetingId },
+              select: { status: true }
+            });
+
+            if (currentMeeting?.status === "processing" && issues.length > 0) {
               const userId = meeting.project.UserToProjects[0]?.userId;
               
-              console.log("Attempting to deduct credits...");
-              console.log("User ID:", userId);
-              console.log("Project ID:", meeting.projectId);
-              console.log("Issues count:", issues.length);
-              
               if (userId) {
+                console.log("Attempting to deduct credits (polling)");
+                
                 try {
                   const result = await consumeCredits(
                     userId,
@@ -94,15 +95,14 @@ export async function GET(
                     meeting.projectId,
                     `Generated ${issues.length} issues from: ${meeting.name.slice(0, 30)}...`
                   );
-                  console.log("Credits deducted successfully!");
-                  console.log("Remaining credits:", result.remaining);
+                  console.log("Credits deducted successfully");
+                  console.log(`Remaining credits: ${result.remaining}`);
                 } catch (creditError: any) {
                   console.error("Credit deduction FAILED:", creditError.message);
-                  console.error("Error name:", creditError.name);
                 }
-              } else {
-                console.error("No user ID found for credit deduction");
               }
+            } else {
+              console.log("Meeting already processed or no issues, skipping credit deduction");
             }
 
             await db.meeting.update({
@@ -148,6 +148,7 @@ export async function GET(
         console.error("Error checking AssemblyAI status:", error.message);
       }
     }
+
     const { project, ...meetingData } = meeting;
     return NextResponse.json({ meeting: meetingData });
   } catch (error: any) {
