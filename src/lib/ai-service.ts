@@ -15,24 +15,47 @@ function truncate(text: string, maxChars: number) {
   return text.length > maxChars ? text.slice(0, maxChars) : text
 }
 
-// FIXED: More explicit system prompt to prevent preambles
-const COMMIT_SYSTEM_PROMPT = `You are a git diff summarizer. Output ONLY a bulleted list (max 3 bullets) of what changed. NO preambles, NO explanations, NO "Here are the changes" text. Start directly with bullets.
 
-Example output:
-• Added user authentication with JWT
+const COMMIT_SYSTEM_PROMPT = `You are a git diff summarizer. Output ONLY 2-3 concise bullet points describing what changed.
+
+Rules:
+- Start directly with bullets (•)
+- NO preambles or explanations
+- NO "Here are the changes" text
+- Be specific about what was modified
+
+Example:
+• Added user authentication with JWT tokens
 • Refactored database connection pooling
 • Fixed memory leak in image processing`
 
-const CODE_SYSTEM_PROMPT =
-  "Summarize code behavior in 2–3 concise technical sentences."
+const CODE_SYSTEM_PROMPT = "Summarize the code's purpose and behavior in 2-3 concise technical sentences. Focus on what the code does, not how it's structured."
 
-const CODE_QA_SYSTEM_PROMPT =
-  "Answer ONLY using the provided code context. " +
-  "If one or more files match, list their file paths as bullet points. " +
-  "Do NOT say 'not found' if any match exists. " +
-  "Say 'Not found in the codebase' ONLY if there are zero matches."
+const CODE_QA_SYSTEM_PROMPT = `You are a helpful code assistant. Answer questions using ONLY the provided code context.
 
-// FIXED: Enhanced commit summary with stricter output control
+Rules:
+- List relevant file paths clearly
+- Explain what the code does in simple terms
+- If multiple files match, list them all
+- Say "Not found in the codebase" ONLY if zero matches exist
+- Be conversational and helpful`
+
+const COMMIT_QA_SYSTEM_PROMPT = `You are a helpful git history assistant. Answer questions about commits in a user-friendly way.
+
+Rules:
+- Reference commits by their MESSAGE, not hash
+- Format: "In the commit titled '[MESSAGE]', ..."
+- Include dates when relevant
+- Be conversational and clear
+- Only mention commit hashes if specifically asked
+- Say "Not found in commit history" if no matches exist
+
+Example:
+"The audio logic was added in the commit titled 'fix: address mobile audio context issues' on September 27th. This commit resolved issues with audio playback on mobile devices."
+
+NOT: "The audio logic is in commit 7480a07."`
+
+
 export async function aiSummariseCommit(diff: string): Promise<string> {
   if (!diff || diff.length < 20) return "No significant changes."
 
@@ -47,25 +70,38 @@ export async function aiSummariseCommit(diff: string): Promise<string> {
           { role: "user", content: truncatedDiff },
         ],
         temperature: 0,
-        max_tokens: 100,
-      })
+        max_tokens: 120,
+      }),
+      2, // max retries
+      5000 // initial delay
     )
 
     let summary = resp.choices[0]?.message?.content?.trim() ?? ""
-    
-    // FIXED: Strip common preambles if AI ignores instructions
+
     summary = summary
       .replace(/^(here are (the changes?|what changed)|changes made|summary):\s*/i, "")
       .replace(/^in \d+ bullets?:\s*/i, "")
       .trim()
 
-    return summary || "No significant changes."
-  } catch {
-    return "Summary unavailable due to rate limits."
+    if (summary && !summary.startsWith("•") && !summary.startsWith("-")) {
+      const lines = summary.split("\n").filter(Boolean)
+      summary = lines.map(line => line.startsWith("•") || line.startsWith("-") ? line : `• ${line}`).join("\n")
+    }
+
+    return summary || "• Minor refactoring and code improvements"
+  } catch (error: any) {
+    console.error("Commit summary failed:", error.message)
+    
+
+    if (error.message?.includes("rate limit")) {
+      throw new Error("RATE_LIMIT_PERMANENT")
+    }
+    
+    return "• Summary generation failed (rate limited)"
   }
 }
 
-// Code summary (unchanged)
+// code summary
 export async function summariseCode(doc: Document): Promise<string> {
   const code = truncate(String(doc.pageContent ?? ""), 2500)
   if (code.length < 50) return "Minimal or non-functional code."
@@ -80,16 +116,18 @@ export async function summariseCode(doc: Document): Promise<string> {
         ],
         temperature: 0.2,
         max_tokens: 120,
-      })
+      }),
+      2,
+      3000
     )
 
     return resp.choices[0]?.message?.content?.trim() ?? "Summary unavailable."
   } catch {
-    return "Summary unavailable due to rate limits."
+    return "Summary unavailable."
   }
 }
 
-// QA functions (unchanged)
+// code Q&A
 export async function generateCodeQAResponse(
   context: string,
   question: string
@@ -106,17 +144,19 @@ export async function generateCodeQAResponse(
           { role: "system", content: CODE_QA_SYSTEM_PROMPT },
           {
             role: "user",
-            content: `CODE:\n${truncate(context, 6000)}\n\nQUESTION:\n${truncate(question, 300)}`,
+            content: `CODE CONTEXT:\n${truncate(context, 7000)}\n\nQUESTION:\n${truncate(question, 300)}`,
           },
         ],
-        temperature: 0.2,
-        max_tokens: 400,
-      })
+        temperature: 0.3,
+        max_tokens: 500,
+      }),
+      2,
+      3000
     )
 
     return resp.choices[0]?.message?.content?.trim() ?? "Not found in the codebase."
   } catch {
-    return "Not found in the codebase."
+    return "Unable to answer at this time. Please try again."
   }
 }
 
@@ -129,23 +169,22 @@ export async function generateCommitQAResponse(
       groq.chat.completions.create({
         model: AI_MODELS.PRIMARY,
         messages: [
-          { 
-            role: "system", 
-            content: "Answer questions about git commits using ONLY the provided commit summaries. Mention commit hashes. If unknown, say: Not found in commit history." 
-          },
+          { role: "system", content: COMMIT_QA_SYSTEM_PROMPT },
           {
             role: "user",
-            content: `COMMITS:\n${truncate(context, 6000)}\n\nQUESTION:\n${truncate(question, 300)}`,
+            content: `COMMIT HISTORY:\n${truncate(context, 7000)}\n\nQUESTION:\n${truncate(question, 300)}`,
           },
         ],
-        temperature: 0,
-        max_tokens: 200,
-      })
+        temperature: 0.2,
+        max_tokens: 400,
+      }),
+      2,
+      3000
     )
 
     return resp.choices[0]?.message?.content?.trim() ?? "Not found in commit history."
   } catch {
-    return "Not found in commit history."
+    return "Unable to search commit history at this time."
   }
 }
 

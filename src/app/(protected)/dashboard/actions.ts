@@ -61,19 +61,23 @@ export async function askQuestion(
     throw error
   }
 
+  // Handle commit-related questions
   if (isCommitQuestion(question)) {
     const commits = await db.commit.findMany({
       where: {
         projectId,
-        summary: { not: "" },
+        summary: { 
+          not: "",
+          notIn: ["Generating summary...", "Pending"]
+        },
       },
       orderBy: { commitDate: "desc" },
-      take: 10,
+      take: 15,
     })
 
     if (!commits.length) {
       return {
-        answer: "No commit summaries available yet.",
+        answer: "No commit summaries available yet. Please check back in a few minutes.",
         filesReferences: [],
       }
     }
@@ -81,9 +85,11 @@ export async function askQuestion(
     const context = commits
       .map(
         (c) => `
-COMMIT: ${c.commitHash.slice(0, 7)}
+COMMIT: ${c.commitHash}
+DATE: ${c.commitDate.toLocaleString()}
+AUTHOR: ${c.commitAuthorName}
 MESSAGE: ${c.commitMessage}
-SUMMARY:
+CHANGES:
 ${c.summary}
 `.trim()
       )
@@ -97,37 +103,66 @@ ${c.summary}
     }
   }
 
+  // Handle code-related questions
   try {
+    console.log("Generating query embedding...")
     const queryVector = await generateEmbedding(question)
     
     if (!queryVector.length || queryVector.length !== 1536) {
       console.error("Invalid embedding dimensions:", queryVector.length)
       return {
-        answer: "Unable to process this question.",
+        answer: "Failed to process question. Please try again.",
         filesReferences: [],
       }
     }
 
-    const vectorQuery = `[${queryVector.join(",")}]`
-
-    console.log("Searching codebase...")
+    console.log("Searching codebase with vector similarity...")
     
-    const files = (await db.$queryRaw`
-      SELECT
-        "fileName",
-        "sourceCode",
-        "summary",
-        1 - ("summaryEmbedding" <=> ${vectorQuery}::vector) AS similarity
-      FROM "SourceCodeEmbedding"
-      WHERE "projectId" = ${projectId}
-        AND 1 - ("summaryEmbedding" <=> ${vectorQuery}::vector) > 0.25
-      ORDER BY similarity DESC
-      LIMIT 6
-    `) as any[]
+    // FIXED: Proper vector casting and error handling
+    const vectorString = `[${queryVector.join(",")}]`
+    
+    let files: any[] = []
+    
+    try {
+      files = await db.$queryRaw`
+        SELECT
+          "fileName",
+          "sourceCode",
+          "summary",
+          1 - ("summaryEmbedding" <=> ${vectorString}::vector) AS similarity
+        FROM "SourceCodeEmbedding"
+        WHERE "projectId" = ${projectId}
+          AND "summaryEmbedding" IS NOT NULL
+          AND 1 - ("summaryEmbedding" <=> ${vectorString}::vector) > 0.3
+        ORDER BY similarity DESC
+        LIMIT 8
+      `
+    } catch (dbError: any) {
+      console.error("Database query failed:", dbError.message)
+      
+      // Fallback: simple text search if vector search fails
+      const fallbackFiles = await db.sourceCodeEmbedding.findMany({
+        where: {
+          projectId,
+          OR: [
+            { fileName: { contains: question, mode: 'insensitive' } },
+            { summary: { contains: question, mode: 'insensitive' } },
+          ]
+        },
+        take: 5,
+        select: {
+          fileName: true,
+          sourceCode: true,
+          summary: true,
+        }
+      })
+      
+      files = fallbackFiles.map(f => ({ ...f, similarity: 0.5 }))
+    }
 
     if (!files.length) {
       return {
-        answer: "Not found in the codebase.",
+        answer: "Not found in the codebase. Try rephrasing your question or check if the repository has been fully indexed.",
         filesReferences: [],
       }
     }
@@ -138,22 +173,31 @@ ${c.summary}
       .map(
         (f) => `
 FILE: ${f.fileName}
+SUMMARY: ${f.summary}
 
+CODE:
 ${truncateCode(f.sourceCode)}
 `.trim()
       )
-      .join("\n\n----------------\n\n")
+      .join("\n\n========================================\n\n")
 
     const answer = await generateCodeQAResponse(context, question)
 
     return {
       answer,
-      filesReferences: files,
+      filesReferences: files.map(f => ({
+        fileName: f.fileName,
+        sourceCode: f.sourceCode,
+        summary: f.summary || "No summary available",
+        similarity: parseFloat(f.similarity) || 0
+      })),
     }
   } catch (error: any) {
-    console.error("Q&A failed:", error.message)
+    console.error("Q&A processing failed:", error.message)
+    console.error("Stack:", error.stack)
+    
     return {
-      answer: "Failed to answer question.",
+      answer: "An error occurred while processing your question. Please try again.",
       filesReferences: [],
     }
   }

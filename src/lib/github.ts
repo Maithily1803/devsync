@@ -82,16 +82,23 @@ async function getPendingCommits(
   const completed = new Set<string>();
 
   for (const c of existing) {
+    const summary = (c.summary || "").toLowerCase();
+
     const hasValidSummary =
       c.summary &&
       c.summary.trim() !== "" &&
       c.summary !== "Pending" &&
-      !c.summary.startsWith("Summary generation failed") &&
-      !c.summary.includes("Summary unavailable");
+      c.summary !== "Generating summary..." &&
+      !summary.includes("pending") &&
+      !summary.includes("generating");
+
+    const permanentlyFailed =
+      summary.includes("permanently failed") ||
+      summary.includes("rate_limit_permanent");
 
     const maxRetriesReached = (c.retryCount || 0) >= 3;
 
-    if (hasValidSummary || maxRetriesReached) {
+    if (hasValidSummary || maxRetriesReached || permanentlyFailed) {
       completed.add(c.commitHash);
     }
   }
@@ -124,7 +131,7 @@ export async function pollCommits(projectId: string) {
 
     for (const commit of pending) {
       if (processedCount >= MAX_PER_RUN) {
-        console.log(`Processed ${MAX_PER_RUN} commits, stopping to avoid rate limits`);
+        console.log(`Processed ${MAX_PER_RUN} commits, stopping`);
         break;
       }
 
@@ -142,6 +149,7 @@ export async function pollCommits(projectId: string) {
             commitAuthorAvatar: commit.commitAuthorAvatar,
             commitDate: new Date(commit.commitDate),
             summary: "Generating summary...",
+            retryCount: 0,
           },
         });
       }
@@ -149,7 +157,17 @@ export async function pollCommits(projectId: string) {
       const currentRetries = row.retryCount || 0;
 
       if (currentRetries >= 3) {
-        console.log(`Skipping ${commit.commitHash.slice(0, 7)} (max retries reached)`);
+        console.log(`${commit.commitHash.slice(0, 7)} max retries reached`);
+
+        if (!row.summary.includes("permanently failed")) {
+          await db.commit.update({
+            where: { id: row.id },
+            data: {
+              summary: "Summary generation permanently failed (rate limited)",
+              retryCount: 3,
+            },
+          });
+        }
         continue;
       }
 
@@ -157,7 +175,9 @@ export async function pollCommits(projectId: string) {
         row.summary &&
         row.summary !== "Pending" &&
         row.summary !== "Generating summary..." &&
-        !row.summary.startsWith("Summary generation failed")
+        !row.summary.toLowerCase().includes("pending") &&
+        !row.summary.toLowerCase().includes("generating") &&
+        !row.summary.toLowerCase().includes("failed")
       ) {
         console.log(`${commit.commitHash.slice(0, 7)} already has summary`);
         continue;
@@ -168,25 +188,25 @@ export async function pollCommits(projectId: string) {
       if (!diff || diff.length < 50) {
         await db.commit.update({
           where: { id: row.id },
-          data: { summary: "No significant code changes." },
+          data: {
+            summary: "No significant code changes detected",
+            retryCount: 0,
+          },
         });
         console.log(`${commit.commitHash.slice(0, 7)} no significant changes`);
+        processedCount++;
         continue;
       }
 
       try {
         console.log(`Generating summary for ${commit.commitHash.slice(0, 7)}`);
-        
-        const summary = await retryWithBackoff(() =>
-          aiSummariseCommit(diff), 
-          2,
-          3000
-        );
+
+        const summary = await aiSummariseCommit(diff);
 
         await db.commit.update({
           where: { id: row.id },
           data: {
-            summary: summary || "• Minor refactor / formatting changes",
+            summary: summary || "Minor refactoring and formatting changes",
             retryCount: 0,
           },
         });
@@ -195,35 +215,35 @@ export async function pollCommits(projectId: string) {
         processed.push({ commitHash: commit.commitHash });
         processedCount++;
       } catch (err: any) {
-        console.error(
-          `Summary failed for ${commit.commitHash.slice(0, 7)}`,
-          err.message
-        );
+        console.error(`${commit.commitHash.slice(0, 7)} failed`, err.message);
 
-        const newRetryCount = (row.retryCount || 0) + 1;
+        const newRetryCount = currentRetries + 1;
+        const isPermanent = err.message?.includes("RATE_LIMIT_PERMANENT");
 
         await db.commit.update({
           where: { id: row.id },
           data: {
-            summary:
-              newRetryCount >= 3
-                ? "Summary generation permanently failed (rate limited)"
-                : `Summary pending (attempt ${newRetryCount}/3)`,
-            retryCount: newRetryCount,
+            summary: isPermanent
+              ? "Summary generation permanently failed (rate limited)"
+              : `Summary pending (retrying... attempt ${newRetryCount}/3)`,
+            retryCount: isPermanent ? 3 : newRetryCount,
           },
         });
       }
 
-      await new Promise((r) => setTimeout(r, 4000));
+      if (processedCount < MAX_PER_RUN) {
+        await new Promise((r) => setTimeout(r, 6000));
+      }
     }
 
-    console.log(`Processed ${processedCount} commits successfully`);
+    console.log(`Batch complete: ${processedCount} commits processed`);
     return processed;
   } catch (error: any) {
     console.error("pollCommits failed:", error.message);
     return [];
   }
 }
+
 
 
 

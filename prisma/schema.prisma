@@ -64,6 +64,7 @@ model SourceCodeEmbedding {
   project          Project                @relation(fields: [projectId], references: [id])
 
   @@unique([projectId, fileName], name: "projectId_fileName")
+  @@index([projectId])
 }
 
 model Question {
@@ -77,6 +78,9 @@ model Question {
   userId          String
   project         Project  @relation(fields: [projectId], references: [id])
   user            User     @relation(fields: [userId], references: [id])
+
+  @@index([projectId])
+  @@index([userId])
 }
 
 model Commit {
@@ -92,6 +96,10 @@ model Commit {
   summary            String   @default("")
   retryCount         Int      @default(0)
   project            Project  @relation(fields: [projectId], references: [id])
+
+  @@unique([projectId, commitHash])
+  @@index([projectId])
+  @@index([retryCount])
 }
 
 model Meeting {
@@ -108,6 +116,7 @@ model Meeting {
   project      Project  @relation(fields: [projectId], references: [id])
 
   @@index([projectId])
+  @@index([status])
 }
 
 model Payment {
