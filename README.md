@@ -2,32 +2,54 @@
 
 **`Search your code. Understand your meetings. Instantly.`**
 
+## 🧩 Dashboard 
+<p align="center">
+  <img src="assets/dashboard.png" width="900" alt="Dashboard Overview" />
+</p>
 
-## Preview
-### Dashboard 
-![Devsync Dashboard](public/screenshots/hero/dashboard-overview.png)
+## 🎬 Product Tour
+<details>
+  <summary><strong>Create Project</strong></summary>
+  <br/>
+  <p align="center">
+    <img src="assets/create.png" width="700" />
+  </p>
+</details>
 
-### AI-Powered Q&A
-<div align="center">
-  <img src="public/screenshots/features/ai-qa-demo.png" width="80%" alt="AI Q&A Demo">
-</div>
+<details>
+  <summary><strong>Commit Log</strong></summary>
+  <br/>
+  <p align="center">
+    <img src="assets/c2.png" width="700" />
+  </p>
+</details>
 
-### Meeting Intelligence
-<table>
-  <tr>
-    <td><img src="public/screenshots/features/meeting-upload.png" alt="Upload"></td>
-    <td><img src="public/screenshots/features/meeting-processing.png" alt="Processing"></td>
-    <td><img src="public/screenshots/features/meeting-results.png" alt="Results"></td>
-  </tr>
-</table>
+<details>
+  <summary><strong> Meeting Issues </strong></summary>
+  <br/>
+  <p align="center">
+    <img src="assets/meeting.gif" width="800" />
+  </p>
+</details>
 
-### Code References
-![Syntax Highlighted Code](public/screenshots/features/code-references.png)
+<details>
+  <summary><strong>Q&A</strong></summary>
+  <br/>
+  <p align="center">
+    <img src="assets/question.png" width="700" />
+  </p>
+</details>
 
-🎥 **Demo Video:** https://your-video-link.com  
+<details>
+  <summary><strong> Billing </strong></summary>
+  <br/>
+  <p align="center">
+    <img src="assets/billing.gif" width="800" />
+  </p>
+</details>
 
 ---
-## ⚙️ Key Features
+## ✨ Features
 
 - **`Q&A`**  
   Ask questions about your codebase and get instant, context-aware answers with file references.
@@ -37,6 +59,24 @@
 
 - **`Meeting Issue Detection`**  
   Extracts issues, tasks, and priorities from meeting recordings.
+-----
+
+  ## ⚙️ System Breakdown
+<details>
+  <summary><strong> Architecture </strong></summary>
+  <br/>
+  <p align="center">
+    <img src="assets/architecture1.png" alt="System Architecture Diagram" width="100%" />
+  </p>
+</details>
+
+<details>
+  <summary><strong> Workflow </strong></summary>
+  <br/>
+  <p align="center">
+    <img src="assets/flow.png" alt="Processing Workflow Diagram" width="100%" />
+  </p>
+</details>
 
 ---
 ## 🛠️ Built with
@@ -59,18 +99,7 @@
   <img src="https://img.shields.io/badge/Vercel-282C34?style=for-the-badge&logo=vercel&logoColor=white" />
 </p>
 
-<details>
-<summary><strong>How it works</strong></summary>
-<br/>
-### 1. Architecture
-<img src="./architecture.png" alt="DevSync Architecture Diagram" width="100%" />
-### 2. Workflow
-<img src="./flow.png" alt="DevSync Processing Flow" width="100%" />
-<br/>
-</details>
-
-
-
-## Explore DevSync. See the intelligence. ⭐ if it helps.
+---
+## 👀 Explore DevSync. See the intelligence. ⭐ if it helps.
 **`Made with ❤️ and ☕`**
 
