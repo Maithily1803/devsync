@@ -1,6 +1,8 @@
-# [![Typing SVG](https://readme-typing-svg.demolab.com?font=Londrina+Shadow&size=50&pause=1000&color=F7A909&width=500&height=100&lines=DevSync+-+AI+GitHub+SaaS)](https://git.io/typing-svg)
+# [![Typing SVG](https://readme-typing-svg.demolab.com?font=Londrina+Shadow&size=50&pause=3000&color=F7A909&width=500&height=100&lines=DevSync+-+AI+GitHub+SaaS)](https://git.io/typing-svg)
 
-**`Search your code. Understand your meetings. Instantly.`**
+### **`Search your code. Understand your meetings. Instantly.`**
+
+---
 
 ## 🧩 Dashboard 
 <p align="center">
@@ -12,7 +14,7 @@
   <summary><strong>Create Project</strong></summary>
   <br/>
   <p align="center">
-    <img src="assets/create.png" width="700" />
+    <img src="assets/createpage.png" width="700" />
   </p>
 </details>
 
@@ -81,9 +83,9 @@
 ---
 ## 🛠️ Built with
 <p align="left" style="margin-bottom: 10px;">
-  <img src="https://img.shields.io/badge/Next.js%2016-282C34?style=for-the-badge&logo=nextdotjs&logoColor=white" />
+  <img src="https://img.shields.io/badge/Next.js-282C34?style=for-the-badge&logo=nextdotjs&logoColor=white" />
   <img src="https://img.shields.io/badge/TypeScript-282C34?style=for-the-badge&logo=typescript&logoColor=3178C6" />
-  <img src="https://img.shields.io/badge/Tailwind%20CSS%20v4-282C34?style=for-the-badge&logo=tailwindcss&logoColor=38BDF8" />
+  <img src="https://img.shields.io/badge/Tailwind%20CSS-282C34?style=for-the-badge&logo=tailwindcss&logoColor=38BDF8" />
   <img src="https://img.shields.io/badge/tRPC-282C34?style=for-the-badge&logo=trpc&logoColor=2596BE" />
   <img src="https://img.shields.io/badge/Prisma-282C34?style=for-the-badge&logo=prisma&logoColor=3178C6" />
   <img src="https://img.shields.io/badge/Supabase-282C34?style=for-the-badge&logo=supabase&logoColor=3FCF8E" />
