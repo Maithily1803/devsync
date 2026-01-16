@@ -1,4 +1,5 @@
 'use server'
+
 import { generateEmbedding } from "@/lib/embeddings"
 import {
   generateCodeQAResponse,
@@ -61,14 +62,21 @@ export async function askQuestion(
     throw error
   }
 
-  // Handle commit-related questions
   if (isCommitQuestion(question)) {
+    console.log("Searching commit history...")
+
     const commits = await db.commit.findMany({
       where: {
         projectId,
-        summary: { 
+        summary: {
           not: "",
-          notIn: ["Generating summary...", "Pending"]
+          notIn: [
+            "Generating summary...",
+            "Pending",
+            "Retry pending (attempt 1/3)",
+            "Retry pending (attempt 2/3)",
+            "Retry pending (attempt 3/3)",
+          ],
         },
       },
       orderBy: { commitDate: "desc" },
@@ -103,27 +111,41 @@ ${c.summary}
     }
   }
 
-  // Handle code-related questions
   try {
-    console.log("Generating query embedding...")
-    const queryVector = await generateEmbedding(question)
-    
-    if (!queryVector.length || queryVector.length !== 1536) {
-      console.error("Invalid embedding dimensions:", queryVector.length)
+    console.log("Searching codebase...")
+
+    const embeddingCount = await db.sourceCodeEmbedding.count({
+      where: { projectId },
+    })
+
+    if (embeddingCount === 0) {
       return {
-        answer: "Failed to process question. Please try again.",
+        answer: "The codebase is still being indexed. Please wait a few minutes and try again.",
         filesReferences: [],
       }
     }
 
-    console.log("Searching codebase with vector similarity...")
-    
-    // FIXED: Proper vector casting and error handling
-    const vectorString = `[${queryVector.join(",")}]`
-    
+    console.log(`Found ${embeddingCount} files in index`)
+    console.log("Generating query embedding...")
+
+    const queryVector = await generateEmbedding(question)
+
+    if (!queryVector.length || queryVector.length !== 1536) {
+      console.error("Invalid embedding dimensions:", queryVector.length)
+      return {
+        answer: "Failed to process question.",
+        filesReferences: [],
+      }
+    }
+
+    console.log("Query embedding generated")
+    console.log("Performing vector similarity search...")
+
     let files: any[] = []
-    
+
     try {
+      const vectorString = `[${queryVector.join(",")}]`
+
       files = await db.$queryRaw`
         SELECT
           "fileName",
@@ -133,41 +155,55 @@ ${c.summary}
         FROM "SourceCodeEmbedding"
         WHERE "projectId" = ${projectId}
           AND "summaryEmbedding" IS NOT NULL
-          AND 1 - ("summaryEmbedding" <=> ${vectorString}::vector) > 0.3
+          AND array_length(regexp_split_to_array("summaryEmbedding"::text, ','), 1) = 1536
+          AND 1 - ("summaryEmbedding" <=> ${vectorString}::vector) > 0.25
         ORDER BY similarity DESC
         LIMIT 8
       `
+      console.log(`Found ${files.length} relevant files via vector search`)
     } catch (dbError: any) {
-      console.error("Database query failed:", dbError.message)
-      
-      // Fallback: simple text search if vector search fails
+      console.error("Vector search failed:", dbError.message)
+      console.log("Falling back to text search...")
+
+      const keywords = question
+        .toLowerCase()
+        .split(" ")
+        .filter((w) => w.length > 3)
+
       const fallbackFiles = await db.sourceCodeEmbedding.findMany({
         where: {
           projectId,
           OR: [
-            { fileName: { contains: question, mode: 'insensitive' } },
-            { summary: { contains: question, mode: 'insensitive' } },
-          ]
+            ...keywords.map((kw) => ({
+              fileName: { contains: kw, mode: "insensitive" as const },
+            })),
+            ...keywords.map((kw) => ({
+              summary: { contains: kw, mode: "insensitive" as const },
+            })),
+          ],
         },
-        take: 5,
+        take: 8,
         select: {
           fileName: true,
           sourceCode: true,
           summary: true,
-        }
+        },
       })
-      
-      files = fallbackFiles.map(f => ({ ...f, similarity: 0.5 }))
+
+      files = fallbackFiles.map((f) => ({ ...f, similarity: 0.4 }))
+      console.log(`Found ${files.length} files via keyword search`)
     }
 
     if (!files.length) {
+      console.log("No matching files found")
       return {
-        answer: "Not found in the codebase. Try rephrasing your question or check if the repository has been fully indexed.",
+        answer:
+          "Not found in the codebase. The repository may still be indexing.",
         filesReferences: [],
       }
     }
 
-    console.log(`Found ${files.length} relevant files`)
+    console.log(`Building context from ${files.length} files`)
 
     const context = files
       .map(
@@ -181,27 +217,31 @@ ${truncateCode(f.sourceCode)}
       )
       .join("\n\n========================================\n\n")
 
+    console.log("Generating AI response...")
     const answer = await generateCodeQAResponse(context, question)
+    console.log("Response generated")
 
     return {
       answer,
-      filesReferences: files.map(f => ({
+      filesReferences: files.map((f) => ({
         fileName: f.fileName,
         sourceCode: f.sourceCode,
         summary: f.summary || "No summary available",
-        similarity: parseFloat(f.similarity) || 0
+        similarity: parseFloat(f.similarity) || 0,
       })),
     }
   } catch (error: any) {
     console.error("Q&A processing failed:", error.message)
     console.error("Stack:", error.stack)
-    
+
     return {
-      answer: "An error occurred while processing your question. Please try again.",
+      answer:
+        "An error occurred while processing your question. The repository may still be indexing.",
       filesReferences: [],
     }
   }
 }
+
 
 
 

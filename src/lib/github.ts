@@ -1,7 +1,6 @@
 import { Octokit } from "@octokit/rest";
 import { db } from "@/server/db";
 import { aiSummariseCommit } from "./ai-service";
-import { retryWithBackoff } from "./retry-helper";
 
 export const octokit = new Octokit({
   auth: process.env.GITHUB_TOKEN,
@@ -127,11 +126,11 @@ export async function pollCommits(projectId: string) {
 
     const processed: { commitHash: string }[] = [];
     let processedCount = 0;
-    const MAX_PER_RUN = 3;
+    const MAX_PER_RUN = 5;
 
     for (const commit of pending) {
       if (processedCount >= MAX_PER_RUN) {
-        console.log(`Processed ${MAX_PER_RUN} commits, stopping`);
+        console.log(`Processed ${MAX_PER_RUN} commits, stopping batch`);
         break;
       }
 
@@ -163,7 +162,7 @@ export async function pollCommits(projectId: string) {
           await db.commit.update({
             where: { id: row.id },
             data: {
-              summary: "Summary generation permanently failed (rate limited)",
+              summary: "Summary generation failed.",
               retryCount: 3,
             },
           });
@@ -199,7 +198,9 @@ export async function pollCommits(projectId: string) {
       }
 
       try {
-        console.log(`Generating summary for ${commit.commitHash.slice(0, 7)}`);
+        console.log(
+          `Generating summary for ${commit.commitHash.slice(0, 7)}`
+        );
 
         const summary = await aiSummariseCommit(diff);
 
@@ -214,8 +215,15 @@ export async function pollCommits(projectId: string) {
         console.log(`${commit.commitHash.slice(0, 7)} summary generated`);
         processed.push({ commitHash: commit.commitHash });
         processedCount++;
+
+        if (processedCount < MAX_PER_RUN) {
+          await new Promise((r) => setTimeout(r, 3000));
+        }
       } catch (err: any) {
-        console.error(`${commit.commitHash.slice(0, 7)} failed`, err.message);
+        console.error(
+          `${commit.commitHash.slice(0, 7)} failed`,
+          err.message
+        );
 
         const newRetryCount = currentRetries + 1;
         const isPermanent = err.message?.includes("RATE_LIMIT_PERMANENT");
@@ -224,15 +232,13 @@ export async function pollCommits(projectId: string) {
           where: { id: row.id },
           data: {
             summary: isPermanent
-              ? "Summary generation permanently failed (rate limited)"
-              : `Summary pending (retrying... attempt ${newRetryCount}/3)`,
+              ? "Summary generation failed (rate limited)"
+              : newRetryCount >= 3
+              ? "Summary generation failed (max retries)"
+              : `Retry pending (attempt ${newRetryCount}/3)`,
             retryCount: isPermanent ? 3 : newRetryCount,
           },
         });
-      }
-
-      if (processedCount < MAX_PER_RUN) {
-        await new Promise((r) => setTimeout(r, 6000));
       }
     }
 
@@ -243,6 +249,7 @@ export async function pollCommits(projectId: string) {
     return [];
   }
 }
+
 
 
 
